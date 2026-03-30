@@ -211,6 +211,9 @@
                             <div id="trainProgressCard" class="mt-3" style="display:none;">
                                 <div class="card bg-light">
                                     <div class="card-body py-3">
+                                        <p id="trainProgressExplain" class="text-muted mb-2" style="font-size:0.82em;">
+                                            Your voice model is being trained on your dataset. Each epoch is one full pass through all your audio samples. The model improves with each pass, learning the voice characteristics from your data.
+                                        </p>
                                         <div class="d-flex justify-content-between align-items-center mb-2">
                                             <strong id="trainProgressLabel">Training Progress</strong>
                                             <span id="trainEpochInfo" class="text-muted" style="font-size:0.9em;"></span>
@@ -374,10 +377,10 @@
                 const mode = q('#trainMode').value;
                 const hint = q('#trainModeHint');
                 if (mode === 'finetune') {
-                    hint.innerHTML = '<span class="text-info">Uses a pre-trained checkpoint. Recommended for datasets under 5,000 samples. Faster convergence (500-1000 epochs).</span>';
+                    hint.innerHTML = '<span class="text-info">Starts from a pre-trained voice model and adapts it to sound like your dataset. Best for under 5,000 samples. Typically 500-1000 epochs are enough — each epoch takes a few seconds.</span>';
                     q('#maxEpochs').value = 1000;
                 } else {
-                    hint.innerHTML = '<span class="text-info">No checkpoint — learns voice from scratch. Recommended for 10,000+ samples. Needs more epochs (2000+).</span>';
+                    hint.innerHTML = '<span class="text-info">Builds a voice model entirely from your dataset with no starting point. Requires 10,000+ samples and 2000+ epochs for good results. Each epoch takes a few seconds.</span>';
                     q('#maxEpochs').value = 2000;
                 }
             }
@@ -649,17 +652,13 @@
                     const maxEpochs = parseInt(q('#maxEpochs').value) || 1000;
                     const startEpoch = data.start_epoch || 0;
                     const currentEpoch = data.estimated_epoch || data.latest_epoch;
-                    const totalTarget = startEpoch + maxEpochs;
 
                     if (currentEpoch !== null) {
-                        const done = currentEpoch - startEpoch + 1;
+                        const done = Math.max(0, currentEpoch - startEpoch + 1);
                         const pct = Math.min(100, Math.max(0, Math.round((done / maxEpochs) * 100)));
                         q('#trainProgressBar').style.width = pct + '%';
                         q('#trainProgressBar').textContent = pct + '%';
-
-                        const confirmedEpoch = data.latest_epoch !== null ? data.latest_epoch + 1 : '?';
-                        const estLabel = currentEpoch !== data.latest_epoch ? ` (~${currentEpoch + 1} estimated)` : '';
-                        q('#trainEpochInfo').textContent = `Epoch ${confirmedEpoch}${estLabel} / ${totalTarget} (${done} of ${maxEpochs} trained)`;
+                        q('#trainEpochInfo').textContent = `Epoch ${done} of ${maxEpochs}`;
                     }
 
                     q('#trainCheckpointCount').textContent = `${data.total_checkpoints} checkpoint(s) saved`;
