@@ -39,7 +39,11 @@ Options:
   --skip-preprocess      Skip preprocessing
   -h, --help             Show this help
 
-After setup, train with:
+After setup, train via the web UI:
+  python3 -m piper_recording_studio
+  Visit http://localhost:8000/train and click 'Start Training'
+
+Or train from the command line:
   cd $PIPER_DIR/src/python
   source .venv/bin/activate
   python3 -m piper_train \\
@@ -49,7 +53,7 @@ After setup, train with:
     --validation-split 0.0 --num-test-examples 0 \\
     --max_epochs 1000 \\
     --resume_from_checkpoint $CHECKPOINT_DIR/$CHECKPOINT_FILE \\
-    --checkpoint-epochs 1 --precision 32
+    --checkpoint-epochs 10 --precision 32
 EOF
     exit 0
 }
@@ -201,7 +205,11 @@ echo "========================================"
 echo " Ready to train!"
 echo "========================================"
 echo ""
-echo "Run the following commands to start training:"
+echo "Option A: Start training from the web UI"
+echo "  python3 -m piper_recording_studio"
+echo "  Visit http://localhost:8000/train and click 'Start Training'"
+echo ""
+echo "Option B: Start training from the command line"
 echo ""
 echo "  cd $PIPER_DIR/src/python"
 echo "  source .venv/bin/activate"
@@ -215,7 +223,7 @@ echo "    --validation-split 0.0 \\"
 echo "    --num-test-examples 0 \\"
 echo "    --max_epochs 1000 \\"
 echo "    --resume_from_checkpoint $CHECKPOINT_DIR/$CHECKPOINT_FILE \\"
-echo "    --checkpoint-epochs 1 \\"
+echo "    --checkpoint-epochs 10 \\"
 echo "    --precision 32"
 echo ""
 echo "Monitor training:"
