@@ -646,6 +646,7 @@
             let logAbort = null;
             let progressInterval = null;
             let trainStartTime = null;
+            let lastCheckpointCount = 0;
 
             // --- Tab switching ---
             function switchTab(tab) {
@@ -793,6 +794,12 @@
 
                     q('#trainCheckpointCount').textContent = `${data.total_checkpoints} checkpoint(s) saved`;
 
+                    // Refresh checkpoint dropdowns when new ones appear
+                    if (data.total_checkpoints !== lastCheckpointCount) {
+                        lastCheckpointCount = data.total_checkpoints;
+                        loadCheckpoints();
+                    }
+
                     if (trainStartTime) {
                         const elapsed = Math.round((Date.now() - trainStartTime) / 1000);
                         const mins = Math.floor(elapsed / 60);
@@ -885,13 +892,21 @@
             // --- Checkpoints & Export ---
             let selectedCheckpoint = null;
 
+            function ckptLabel(c) {
+                const profile = getProfileName().replace(/ /g, '_');
+                if (c.epoch !== null) {
+                    return `${profile}.${String(c.epoch + 1).padStart(4, '0')}`;
+                }
+                return c.name;
+            }
+
             async function loadCheckpoints() {
                 try {
                     const resp = await fetch('/api/training/checkpoints');
                     const data = await resp.json();
                     const ckpts = data.checkpoints || [];
 
-                    // Step 6: Export dropdown
+                    // Step 7: Export dropdown
                     const el = q('#checkpointList');
                     if (ckpts.length === 0) {
                         el.innerHTML = '<p class="text-muted">No checkpoints yet. Start training first.</p>';
@@ -901,19 +916,19 @@
                         html += '<select id="checkpointSelect" class="form-control">';
                         ckpts.forEach((c, i) => {
                             const sel = i === ckpts.length - 1 ? ' selected' : '';
-                            const label = c.epoch !== null ? `Epoch ${c.epoch + 1} (${c.size_mb} MB)` : c.name;
-                            html += `<option value="${c.path}"${sel}>${label}</option>`;
+                            html += `<option value="${c.path}"${sel}>${ckptLabel(c)}</option>`;
                         });
                         html += '</select>';
-                        if (data.onnx_exists) {
-                            html += '<p class="text-success mt-1" style="font-size:0.85em;"><i class="fas fa-check-circle"></i> Exported model: my_voice.onnx</p>';
-                        }
                         el.innerHTML = html;
                         q('#exportBtn').disabled = false;
                     }
 
-                    // Step 7: Test checkpoint dropdown
+                    // Show exported models
+                    loadExportedModels();
+
+                    // Step 6: Test checkpoint dropdown
                     const testSel = q('#testCheckpointSelect');
+                    const prevValue = testSel.value;
                     testSel.innerHTML = '';
                     if (ckpts.length === 0) {
                         testSel.innerHTML = '<option value="">No checkpoints yet</option>';
@@ -923,8 +938,9 @@
                         ckpts.forEach((c, i) => {
                             const opt = document.createElement('option');
                             opt.value = c.path;
-                            opt.textContent = c.epoch !== null ? `Epoch ${c.epoch + 1} (${c.size_mb} MB)` : c.name;
-                            if (i === ckpts.length - 1) opt.selected = true;
+                            opt.textContent = ckptLabel(c);
+                            if (c.path === prevValue) opt.selected = true;
+                            else if (i === ckpts.length - 1 && !prevValue) opt.selected = true;
                             testSel.appendChild(opt);
                         });
                         q('#exportAndTestBtn').disabled = false;
