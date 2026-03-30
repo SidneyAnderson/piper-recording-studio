@@ -654,10 +654,10 @@ def main() -> None:
 
         running = training_process is not None and training_process.returncode is None
 
-        # Find latest checkpoint to determine current epoch
+        # Find all training checkpoints and determine progress
         lightning_dir = training_dir / "lightning_logs"
         latest_epoch = None
-        start_epoch = None
+        first_epoch = None
         total_checkpoints = 0
 
         if lightning_dir.exists():
@@ -667,9 +667,19 @@ def main() -> None:
                 m = re.search(r'epoch=(\d+)', ckpt.name)
                 if m:
                     epoch = int(m.group(1))
-                    if start_epoch is None:
-                        start_epoch = epoch
+                    if first_epoch is None:
+                        first_epoch = epoch
                     latest_epoch = epoch
+
+        # Estimate the base epoch (where fine-tuning started)
+        # First checkpoint is saved checkpoint_interval epochs after the base
+        checkpoint_interval = 10  # default
+        if first_epoch is not None and total_checkpoints == 1:
+            start_epoch = first_epoch - checkpoint_interval
+        elif first_epoch is not None:
+            start_epoch = first_epoch - checkpoint_interval
+        else:
+            start_epoch = 0
 
         # Read last few lines of log for recent activity
         last_log_lines = []
