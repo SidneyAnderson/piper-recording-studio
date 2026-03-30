@@ -497,7 +497,8 @@ def main() -> None:
         if not (training_dir / "config.json").exists():
             return jsonify({"ok": False, "error": "Dataset not preprocessed. Run the setup script first."})
 
-        # Find checkpoint
+        # Find the downloaded pre-trained checkpoint (e.g. en_GB-cori-high.ckpt)
+        # This is only used for the initial fine-tuning start
         checkpoint_file = None
         if checkpoints_dir.exists():
             ckpts = sorted(checkpoints_dir.glob("*.ckpt"))
@@ -505,6 +506,8 @@ def main() -> None:
                 checkpoint_file = str(ckpts[0])
 
         # Check for existing training checkpoints to resume from
+        # If found, these take priority over the downloaded checkpoint
+        # since they contain the partially-trained model state
         lightning_ckpt_dir = training_dir / "lightning_logs"
         resume_ckpt = None
         if lightning_ckpt_dir.exists():
@@ -522,7 +525,10 @@ def main() -> None:
         if not venv_python.exists():
             return jsonify({"ok": False, "error": f"Piper venv not found. Run Setup in Step 2."})
 
-        # Detect checkpoint quality tier and epoch offset
+        # Determine which checkpoint to resume from:
+        # 1. If training was previously started, resume from latest training checkpoint
+        # 2. If fine-tuning for the first time, use the downloaded pre-trained checkpoint
+        # 3. If training from scratch, no checkpoint is used
         ckpt_to_use = None
         if resume_ckpt:
             ckpt_to_use = resume_ckpt
@@ -648,7 +654,16 @@ def main() -> None:
 
     @app.route("/api/training/progress")
     async def api_training_progress() -> Response:
-        """Return current training progress by scanning checkpoints."""
+        """Return current training progress by scanning checkpoints.
+
+        Since Piper doesn't log per-epoch output, we determine progress by:
+        1. Scanning checkpoint files for the latest epoch number
+        2. Estimating additional epochs based on time since last checkpoint
+        3. Calculating start_epoch from the first checkpoint minus save interval
+
+        The frontend shows user-friendly epoch counts (1 to N) by subtracting
+        start_epoch from the current epoch.
+        """
         import re
         nonlocal training_process
 
@@ -791,10 +806,11 @@ print(json.dumps(results))
                     "size_mb": round(ckpt.stat().st_size / (1024 * 1024)),
                 })
 
-        onnx_path = output_dir.parent / "my_voice.onnx"
+        # Check if any exported models exist
+        has_models = models_dir.exists() and any(models_dir.glob("*.onnx"))
         return jsonify({
             "checkpoints": checkpoints,
-            "onnx_exists": onnx_path.exists(),
+            "onnx_exists": has_models,
         })
 
     models_dir = output_dir.parent / "models"
@@ -808,7 +824,7 @@ print(json.dumps(results))
 
         data = await request.get_json()
         checkpoint = data.get("checkpoint", "")
-        profile_name = data.get("profileName", "my_voice")
+        profile_name = data.get("profileName", "voice")
         ckpt_path = training_dir / checkpoint
 
         if not ckpt_path.exists():
@@ -821,7 +837,7 @@ print(json.dumps(results))
         # Sanitize profile name
         safe_name = "".join(c for c in profile_name if c.isalnum() or c in " _-").strip().replace(" ", "_")
         if not safe_name:
-            safe_name = "my_voice"
+            safe_name = "voice"
 
         models_dir.mkdir(parents=True, exist_ok=True)
         onnx_filename = f"{safe_name}.{epoch}.onnx"
@@ -1013,9 +1029,11 @@ print(json.dumps(results))
                     profile_training = output_dir.parent / "voice_data" / profile_id / "training"
                     data["has_training"] = profile_training.exists() and (profile_training / "config.json").exists()
 
-                    # Check for exported model
-                    profile_model = output_dir.parent / "voice_data" / profile_id / "my_voice.onnx"
-                    data["has_model"] = profile_model.exists()
+                    # Check for exported models matching this profile name
+                    safe_id = profile_id.replace(" ", "_")
+                    data["has_model"] = models_dir.exists() and any(
+                        f.name.startswith(safe_id + ".") for f in models_dir.glob("*.onnx")
+                    ) if models_dir.exists() else False
 
                     profiles.append(data)
                 except Exception:

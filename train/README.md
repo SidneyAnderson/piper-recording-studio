@@ -166,15 +166,12 @@ Larger batch sizes train faster but don't affect final model quality. If you get
 
 ### Monitoring training
 
-In a separate terminal:
+The web UI at `/train` includes a **Statistics tab** that shows live loss curves (generator and discriminator) during training. Both losses should decrease and plateau — stop training when they flatten out.
 
-```sh
-tensorboard --logdir /path/to/training/lightning_logs
-```
-
-Visit http://localhost:6006 to watch loss curves. Key metrics:
-- `loss_disc_all` — should decrease and then plateau
-- Stop training when the loss plateaus (typically 500-1000 epochs for fine-tuning)
+Key metrics:
+- `loss_gen_all` (generator loss) — how well the model generates speech
+- `loss_disc_all` (discriminator loss) — how well the model distinguishes real from generated speech
+- Stop training when both losses plateau (typically 500-1000 epochs for fine-tuning)
 
 ### Disk space
 
@@ -256,7 +253,7 @@ echo "Hello world!" | piper -m models/British_Narrator.510.onnx --output_file te
 ## Tips
 
 - **Quality over quantity:** Clean, consistent audio (like ElevenLabs output) is ideal for training. 1,000+ samples with fine-tuning should produce good results.
-- **Don't over-train:** More epochs is not always better. Over-training causes distortion. Monitor TensorBoard and stop when loss plateaus.
+- **Don't over-train:** More epochs is not always better. Over-training causes distortion. Watch the Statistics tab on the training page — stop when losses plateau.
 - **Test during training:** You can export and test any checkpoint while training continues. Try one every 100 epochs to find the sweet spot.
 - **pip version matters:** Piper's `pytorch-lightning~=1.7.0` dependency has invalid metadata that pip>=24.1 rejects. Always use `pip<24.1` in the training venv.
 - **Training from scratch:** Not recommended with under 5,000 samples. If you must, expect to need 2,000+ epochs and the quality may not match fine-tuning.

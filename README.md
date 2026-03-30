@@ -172,7 +172,7 @@ Features:
 * **Resumable** — stop and restart at any time; completed prompts are skipped
 * **Persistent config** — API key, voice ID, and model ID are saved to `.env` and auto-loaded on next visit
 
-Note: the 44100 Hz sample rate requires an ElevenLabs Pro tier or above.
+Note: 24000 Hz is the recommended sample rate for Piper training. Higher rates (44100 Hz) are not used by Piper and have been removed from the UI.
 
 ### CLI
 
@@ -198,7 +198,7 @@ Additional options:
 |------|---------|-------------|
 | `--prompts` | `prompts/` | Path to prompts directory |
 | `--output` | `output/` | Path to output directory |
-| `--sample-rate` | `24000` | Audio sample rate (44100 requires Pro tier) |
+| `--sample-rate` | `24000` | Audio sample rate (24000 recommended for Piper) |
 | `--stability` | `0.5` | Voice stability (0.0–1.0) |
 | `--similarity-boost` | `0.75` | Voice similarity boost (0.0–1.0) |
 | `--rate-limit-delay` | `0.5` | Seconds between API calls |
