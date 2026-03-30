@@ -279,6 +279,60 @@ def main() -> None:
             languages=sorted(languages.items()),
         )
 
+    @app.route("/train")
+    async def api_train() -> str:
+        """Training guide page"""
+        # Count generated audio files per language
+        num_samples = 0
+        language = "en-GB"
+        for lang_dir in output_dir.iterdir():
+            if lang_dir.is_dir():
+                count = len(list(lang_dir.rglob("*.wav")))
+                if count > num_samples:
+                    num_samples = count
+                    language = lang_dir.name
+
+        dataset_dir = output_dir.parent / f"dataset_{language}"
+        training_dir = output_dir.parent / "training"
+        batch_size = 32
+
+        return await render_template(
+            "train.html",
+            language=language,
+            num_samples=num_samples,
+            dataset_dir=dataset_dir,
+            training_dir=training_dir,
+            batch_size=batch_size,
+        )
+
+    @app.route("/api/training/status")
+    async def api_training_status() -> Response:
+        """Check dataset generation and export status."""
+        generated = 0
+        language = ""
+        for lang_dir in output_dir.iterdir():
+            if lang_dir.is_dir():
+                count = len(list(lang_dir.rglob("*.wav")))
+                if count > generated:
+                    generated = count
+                    language = lang_dir.name
+
+        exported = 0
+        export_dir = ""
+        dataset_path = output_dir.parent / f"dataset_{language}"
+        if dataset_path.exists():
+            metadata = dataset_path / "metadata.csv"
+            if metadata.exists():
+                exported = sum(1 for _ in open(metadata))
+                export_dir = str(dataset_path)
+
+        return jsonify({
+            "generated": generated,
+            "language": language,
+            "exported": exported,
+            "export_dir": export_dir,
+        })
+
     env_path = output_dir.parent / ".env"
 
     def _load_env() -> dict:

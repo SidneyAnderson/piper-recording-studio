@@ -169,6 +169,35 @@ ELEVENLABS_MODEL_ID=eleven_multilingual_v2
 This file is gitignored and auto-loaded when you open the generate page. The CLI also accepts these as environment variables.
 
 
+## Training a Piper Voice
+
+After generating audio, use the built-in training guide to create a custom Piper TTS voice.
+
+### Quick start
+
+``` sh
+# 1. Export dataset
+python3 -m export_dataset --audio-glob '*.wav' output/en-GB/ dataset_en-GB/
+
+# 2. Run the automated setup (clones Piper, downloads checkpoint, preprocesses)
+bash train/setup_training.sh
+
+# 3. Follow the printed instructions to start training
+```
+
+### Web UI guide
+
+Visit http://localhost:8000/train (or click **Training Guide** on the home page) for a step-by-step walkthrough with commands tailored to your dataset.
+
+### Why fine-tune?
+
+With fewer than 5,000 samples, fine-tuning from a pre-trained checkpoint produces significantly better results than training from scratch. The checkpoint provides existing knowledge of speech patterns — training only adapts the voice characteristics.
+
+Pre-trained checkpoints: https://huggingface.co/datasets/rhasspy/piper-checkpoints
+
+See [train/README.md](train/README.md) for the complete training guide.
+
+
 ## Multi-User Mode
 
 ``` sh

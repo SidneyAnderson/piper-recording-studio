@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+        <meta name="description" content="Training guide for Piper TTS">
+        <link href="css/bootstrap.min.css" rel="stylesheet">
+        <link href="css/fontawesome-all.min.css" rel="stylesheet">
+        <style>
+            .step-card { border-left: 4px solid #28a745; }
+            .step-card.pending { border-left-color: #6c757d; }
+            .step-card.active { border-left-color: #007bff; }
+            .step-card.done { border-left-color: #28a745; }
+            .step-num { display: inline-block; width: 30px; height: 30px; line-height: 30px;
+                        text-align: center; border-radius: 50%; background: #28a745;
+                        color: white; font-weight: bold; margin-right: 8px; }
+            .step-card.pending .step-num { background: #6c757d; }
+            .step-card.active .step-num { background: #007bff; }
+            code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; }
+            pre { background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 5px;
+                  overflow-x: auto; font-size: 0.85em; }
+            .copy-btn { position: absolute; top: 8px; right: 8px; }
+            .cmd-block { position: relative; }
+        </style>
+    </head>
+    <body>
+        <header>
+            <nav class="navbar navbar-expand-md bg-light">
+                <div class="m-auto text-center">
+                    <img id="logo" src="img/logo.png" alt="Piper logo" style="height: 4em;" />
+                    <h2 class="font-weight-bold">
+                        Recording Studio — Training Guide
+                    </h2>
+                </div>
+            </nav>
+        </header>
+        <div class="container mt-4 mb-5">
+            <div class="row justify-content-center">
+                <div class="col-md-10">
+
+                    <!-- Status -->
+                    <div class="card mb-4">
+                        <div class="card-body">
+                            <h5 class="card-title">Dataset Status</h5>
+                            <div id="datasetStatus" class="text-muted">Checking...</div>
+                        </div>
+                    </div>
+
+                    <!-- Step 1: Export -->
+                    <div class="card mb-3 step-card" id="step1">
+                        <div class="card-body">
+                            <h5><span class="step-num">1</span> Export Dataset</h5>
+                            <p>Convert your generated audio to LJSpeech format for training.</p>
+                            <div class="cmd-block">
+                                <pre>python3 -m export_dataset --audio-glob '*.wav' output/{{ language }}/ dataset_{{ language }}/</pre>
+                            </div>
+                            <p class="text-muted mt-2">This trims silence and creates a <code>metadata.csv</code> with audio-text pairs.</p>
+                            <div id="exportStatus"></div>
+                        </div>
+                    </div>
+
+                    <!-- Step 2: Setup -->
+                    <div class="card mb-3 step-card pending" id="step2">
+                        <div class="card-body">
+                            <h5><span class="step-num">2</span> Set Up Training Environment</h5>
+                            <p>Clone Piper and install the training dependencies.</p>
+                            <div class="cmd-block">
+                                <pre>sudo apt-get install espeak-ng
+
+git clone https://github.com/rhasspy/piper.git
+cd piper/src/python
+
+python3 -m venv .venv
+source .venv/bin/activate
+pip3 install --upgrade pip wheel setuptools
+pip3 install -e .
+bash build_monotonic_align.sh</pre>
+                            </div>
+                            <div class="alert alert-info mt-2">
+                                <strong>Or use the setup script:</strong>
+                                <pre class="mb-0 mt-1" style="background: transparent; color: inherit; padding: 5px;">bash train/setup_training.sh</pre>
+                                This automates steps 2-4 in one command.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 3: Checkpoint -->
+                    <div class="card mb-3 step-card pending" id="step3">
+                        <div class="card-body">
+                            <h5><span class="step-num">3</span> Download Pre-Trained Checkpoint</h5>
+                            <p>Fine-tuning from an existing checkpoint produces much better results than training from scratch, especially with fewer than 5,000 samples.</p>
+
+                            <div class="alert alert-warning">
+                                <strong>Why fine-tune?</strong> With {{ num_samples }} samples, training from scratch would need 10x more data. Fine-tuning uses an existing model's knowledge of speech patterns and only adapts the voice characteristics to match your dataset.
+                            </div>
+
+                            <h6>Recommended checkpoint for English:</h6>
+                            <div class="cmd-block">
+                                <pre>mkdir -p checkpoints
+
+wget -O checkpoints/en_US-lessac-medium.ckpt \
+  "https://huggingface.co/datasets/rhasspy/piper-checkpoints/resolve/main/en/en_US/lessac/medium/epoch%3D2164-step%3D1355540.ckpt"</pre>
+                            </div>
+                            <p class="text-muted mt-2">~400 MB download. Browse all checkpoints at <a href="https://huggingface.co/datasets/rhasspy/piper-checkpoints" target="_blank">huggingface.co/datasets/rhasspy/piper-checkpoints</a></p>
+
+                            <h6 class="mt-3">Quality tiers:</h6>
+                            <table class="table table-sm">
+                                <thead><tr><th>Tier</th><th>Sample Rate</th><th>Speed</th><th>Quality</th></tr></thead>
+                                <tbody>
+                                    <tr><td>Low</td><td>16,000 Hz</td><td>Fastest</td><td>Basic</td></tr>
+                                    <tr class="table-active"><td><strong>Medium</strong></td><td><strong>22,050 Hz</strong></td><td><strong>Balanced</strong></td><td><strong>Good (recommended)</strong></td></tr>
+                                    <tr><td>High</td><td>22,050 Hz</td><td>Slower</td><td>Best</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Step 4: Preprocess -->
+                    <div class="card mb-3 step-card pending" id="step4">
+                        <div class="card-body">
+                            <h5><span class="step-num">4</span> Preprocess Dataset</h5>
+                            <p>Convert your audio and text into training-ready tensors.</p>
+                            <div class="cmd-block">
+                                <pre>cd piper/src/python
+source .venv/bin/activate
+
+python3 -m piper_train.preprocess \
+  --language en \
+  --input-dir {{ dataset_dir }} \
+  --output-dir {{ training_dir }} \
+  --dataset-format ljspeech \
+  --single-speaker \
+  --sample-rate 22050</pre>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 5: Train -->
+                    <div class="card mb-3 step-card pending" id="step5">
+                        <div class="card-body">
+                            <h5><span class="step-num">5</span> Train</h5>
+                            <p>Fine-tune the checkpoint with your dataset. Requires an NVIDIA GPU.</p>
+                            <div class="cmd-block">
+                                <pre>python3 -m piper_train \
+  --dataset-dir {{ training_dir }} \
+  --accelerator gpu \
+  --devices 1 \
+  --batch-size {{ batch_size }} \
+  --validation-split 0.0 \
+  --num-test-examples 0 \
+  --max_epochs 1000 \
+  --resume_from_checkpoint checkpoints/en_US-lessac-medium.ckpt \
+  --checkpoint-epochs 1 \
+  --precision 32</pre>
+                            </div>
+
+                            <h6 class="mt-3">Batch size by GPU:</h6>
+                            <table class="table table-sm">
+                                <thead><tr><th>GPU VRAM</th><th>Batch Size</th><th>Example GPUs</th></tr></thead>
+                                <tbody>
+                                    <tr><td>8 GB</td><td>12</td><td>GTX 1080, RTX 3060</td></tr>
+                                    <tr><td>10-12 GB</td><td>24</td><td>RTX 3080</td></tr>
+                                    <tr><td>16+ GB</td><td>32</td><td>RTX 4080, A4000</td></tr>
+                                    <tr><td>24 GB</td><td>32-48</td><td>RTX 3090/4090</td></tr>
+                                </tbody>
+                            </table>
+
+                            <div class="alert alert-info mt-2">
+                                <strong>Monitor training:</strong> Run <code>tensorboard --logdir training/lightning_logs</code> and visit <code>http://localhost:6006</code>. Watch <code>loss_disc_all</code> — stop when it plateaus (usually 500-1000 epochs).
+                            </div>
+
+                            <div class="alert alert-warning">
+                                <strong>Disk space:</strong> Each checkpoint is ~400 MB. With <code>--checkpoint-epochs 1</code> and 1000 epochs, that's ~400 GB. Use <code>--checkpoint-epochs 10</code> to save every 10 epochs, or delete old checkpoints periodically.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 6: Export -->
+                    <div class="card mb-3 step-card pending" id="step6">
+                        <div class="card-body">
+                            <h5><span class="step-num">6</span> Export to ONNX</h5>
+                            <p>Convert your trained checkpoint to a portable .onnx model.</p>
+                            <div class="cmd-block">
+                                <pre>python3 -m piper_train.export_onnx \
+  {{ training_dir }}/lightning_logs/version_0/checkpoints/YOUR_BEST.ckpt \
+  my_voice.onnx
+
+# IMPORTANT: copy the config file alongside the model
+cp {{ training_dir }}/config.json my_voice.onnx.json</pre>
+                            </div>
+                            <div class="alert alert-warning mt-2">
+                                <strong>Both files are required:</strong> The <code>.onnx</code> model will not work without its <code>.onnx.json</code> config file. Always keep them together.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 7: Test -->
+                    <div class="card mb-3 step-card pending" id="step7">
+                        <div class="card-body">
+                            <h5><span class="step-num">7</span> Test Your Voice</h5>
+                            <div class="cmd-block">
+                                <pre>pip install piper-tts
+
+echo "Hello, this is my custom trained voice!" | \
+  piper -m my_voice.onnx --output_file test.wav
+
+# Play it
+aplay test.wav</pre>
+                            </div>
+                            <p class="text-muted mt-2">You can test checkpoints during training without stopping — just export whichever checkpoint you want to try.</p>
+                        </div>
+                    </div>
+
+                    <!-- Tips -->
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <h5><i class="fas fa-lightbulb"></i> Tips</h5>
+                            <ul>
+                                <li><strong>Don't over-train.</strong> More epochs is not always better. Over-fitting causes distorted, robotic output. Monitor TensorBoard.</li>
+                                <li><strong>Test checkpoints periodically.</strong> Export and listen every ~100 epochs to find the sweet spot.</li>
+                                <li><strong>Your data quality matters most.</strong> Clean, consistent ElevenLabs audio is ideal for training.</li>
+                                <li><strong>Sample rate must match.</strong> Your audio, preprocessing, and checkpoint must all use the same sample rate.</li>
+                                <li><strong>Cloud GPU option:</strong> If you don't have a local GPU, services like Google Colab (free tier), Vast.ai, or RunPod offer GPU rental by the hour.</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="text-center">
+                        <a href="/" class="btn btn-outline-secondary">
+                            <i class="fas fa-arrow-left"></i> Back to Home
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script>
+            async function checkDataset() {
+                const statusEl = document.getElementById('datasetStatus');
+                try {
+                    const resp = await fetch('/api/training/status');
+                    const data = await resp.json();
+                    let html = '';
+                    if (data.generated > 0) {
+                        html += `<span class="text-success"><i class="fas fa-check-circle"></i> ${data.generated} audio files generated</span>`;
+                    } else {
+                        html += `<span class="text-warning"><i class="fas fa-exclamation-circle"></i> No audio files found. Generate audio first via the <a href="/generate">ElevenLabs Generator</a>.</span>`;
+                    }
+                    if (data.exported > 0) {
+                        html += `<br><span class="text-success"><i class="fas fa-check-circle"></i> Dataset exported: ${data.exported} samples in ${data.export_dir}</span>`;
+                    } else if (data.generated > 0) {
+                        html += `<br><span class="text-muted"><i class="fas fa-info-circle"></i> Dataset not yet exported. Run Step 1 below.</span>`;
+                    }
+                    statusEl.innerHTML = html;
+                } catch(e) {
+                    statusEl.innerHTML = '<span class="text-danger">Could not check status.</span>';
+                }
+            }
+            checkDataset();
+        </script>
+    </body>
+</html>
