@@ -437,7 +437,7 @@ def main() -> None:
                 yield f"data: {json.dumps({'type': 'done', 'generated': 0, 'failed': 0, 'total': total, 'message': 'All prompts already completed.'})}\n\n"
                 return
 
-            max_retries = 3
+            max_retries = 10
             async with httpx.AsyncClient() as client:
                 for i, prompt in enumerate(incomplete):
                     current = already_done + generated + failed + 1
