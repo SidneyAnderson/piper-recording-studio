@@ -246,6 +246,11 @@ def main() -> None:
 
         return await render_template("done.html")
 
+    @app.errorhandler(404)
+    async def handle_404(err) -> Tuple[str, int]:
+        """Suppress noisy 404 logs for favicon, manifests, etc."""
+        return ("Not Found", 404)
+
     @app.errorhandler(Exception)
     async def handle_error(err) -> Tuple[str, int]:
         """Return error as text."""
