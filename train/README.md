@@ -73,28 +73,38 @@ bash build_monotonic_align.sh
 
 Fine-tuning from an existing checkpoint is **strongly recommended** for datasets under 5,000 samples. It produces much better results than training from scratch.
 
+### Option A: Web UI (recommended)
+
+Visit http://localhost:8000/train and use the **checkpoint browser** in Step 3. Select your language, voice, and quality tier — then click Download. The UI streams download progress.
+
+### Option B: CLI
+
 Pre-trained checkpoints are available at:
 https://huggingface.co/datasets/rhasspy/piper-checkpoints
-
-For English (medium quality, recommended starting point):
 
 ```sh
 mkdir -p checkpoints
 
-# Download the English US "lessac" medium checkpoint (~400 MB)
-wget -O checkpoints/en_US-lessac-medium.ckpt \
-  "https://huggingface.co/datasets/rhasspy/piper-checkpoints/resolve/main/en/en_US/lessac/medium/epoch%3D2164-step%3D1355540.ckpt"
+# Example: Download English GB "cori" high quality checkpoint (~1 GB)
+wget -O checkpoints/en_GB-cori-high.ckpt \
+  "https://huggingface.co/datasets/rhasspy/piper-checkpoints/resolve/main/en/en_GB/cori/high/cori-high-500.ckpt"
 ```
 
 ### Quality tiers
 
 | Tier | Sample rate | Model size | Notes |
 |------|------------|------------|-------|
-| Low | 16,000 Hz | Smallest | Fastest inference, lower quality |
-| Medium | 22,050 Hz | Mid | Good balance of speed and quality |
-| High | 22,050 Hz | Largest | Best quality, slower inference |
+| Low | 16,000 Hz | ~200 MB | Fastest inference, basic quality |
+| Medium | 22,050 Hz | ~400 MB | Good balance of speed and quality |
+| **High** | **22,050 Hz** | **~1 GB** | **Best quality (recommended when GPU allows)** |
 
 **Important:** Your audio sample rate must match the checkpoint tier. ElevenLabs-generated audio at 24000 Hz will be resampled during preprocessing.
+
+### Choosing the right checkpoint
+
+- Pick a checkpoint in the **same language** as your training data for best results
+- **High quality** produces the best output and is recommended if your GPU has 16+ GB VRAM
+- The voice name in the checkpoint doesn't matter much — fine-tuning will adapt it to your dataset
 
 
 ## Step 4: Preprocess

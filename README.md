@@ -198,11 +198,13 @@ The setup script handles:
 
 Visit http://localhost:8000/train (or click **Training Guide** on the home page) for a step-by-step walkthrough with commands tailored to your dataset, including GPU batch size recommendations and monitoring tips.
 
-### Why fine-tune?
+### Selecting a checkpoint
 
-With fewer than 5,000 samples, fine-tuning from a pre-trained checkpoint produces significantly better results than training from scratch. The checkpoint provides existing knowledge of speech patterns — training only adapts the voice characteristics.
+The web UI at `/train` includes a **checkpoint browser** with 30+ languages, multiple voices, and low/medium/high quality tiers. Select your language, voice, and quality — then click Download. The high quality tier (~1 GB) is recommended when your GPU has enough VRAM.
 
-Pre-trained checkpoints: https://huggingface.co/datasets/rhasspy/piper-checkpoints
+Fine-tuning from a pre-trained checkpoint produces significantly better results than training from scratch with fewer than 5,000 samples. The checkpoint provides existing knowledge of speech patterns — training only adapts the voice characteristics.
+
+All checkpoints sourced from: https://huggingface.co/datasets/rhasspy/piper-checkpoints
 
 ### Batch size by GPU VRAM
 
