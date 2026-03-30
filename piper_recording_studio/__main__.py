@@ -352,8 +352,16 @@ def main() -> None:
                         yield f"data: {json.dumps({'type': 'progress', 'status': 'ok', 'message': msg, 'generated': already_done + generated, 'failed': failed, 'total': total})}\n\n"
                     except httpx.HTTPStatusError as exc:
                         failed += 1
-                        msg = f"[{current}/{total}] API error for {prompt.id}: {exc.response.status_code}"
+                        try:
+                            detail = exc.response.json().get("detail", {})
+                            error_detail = detail.get("message", exc.response.text[:200]) if isinstance(detail, dict) else str(detail)[:200]
+                        except Exception:
+                            error_detail = exc.response.text[:200]
+                        msg = f"[{current}/{total}] API error for {prompt.id}: {exc.response.status_code} — {error_detail}"
                         yield f"data: {json.dumps({'type': 'progress', 'status': 'error', 'message': msg, 'generated': already_done + generated, 'failed': failed, 'total': total})}\n\n"
+                        if exc.response.status_code == 400:
+                            yield f"data: {json.dumps({'type': 'error', 'message': f'Bad request. Check voice ID, model ID, and settings. Detail: {error_detail}'})}\n\n"
+                            return
                         if exc.response.status_code == 401:
                             yield f"data: {json.dumps({'type': 'error', 'message': 'Invalid API key. Aborting.'})}\n\n"
                             return
