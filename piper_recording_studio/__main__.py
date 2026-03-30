@@ -467,6 +467,9 @@ def main() -> None:
                         if exc.response.status_code == 401:
                             yield f"data: {json.dumps({'type': 'error', 'message': 'Invalid API key. Aborting.'})}\n\n"
                             return
+                        if exc.response.status_code == 403:
+                            yield f"data: {json.dumps({'type': 'error', 'message': f'Forbidden. {error_detail} Aborting.'})}\n\n"
+                            return
                         if exc.response.status_code == 429:
                             yield f"data: {json.dumps({'type': 'progress', 'status': 'error', 'message': 'Rate limited. Waiting 30s...', 'generated': already_done + generated, 'failed': failed, 'total': total})}\n\n"
                             await asyncio.sleep(30)
