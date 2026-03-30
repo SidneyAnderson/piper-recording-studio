@@ -20,6 +20,7 @@ __pycache__/
 /training/
 /checkpoints/
 /piper/
+lightning_logs/
 *.onnx
 *.onnx.json
 

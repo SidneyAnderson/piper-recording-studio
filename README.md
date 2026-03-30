@@ -22,6 +22,8 @@ Visit http://localhost:8000 to select a language and start recording.
 
 Add `--help` to see more options.
 
+Note: Docker is suitable for recording and ElevenLabs generation. Training requires a native install with GPU access.
+
 
 ### Building
 
@@ -31,6 +33,14 @@ docker build . -t rhasspy/piper-recording-studio
 
 
 ## Installing without Docker
+
+### System dependencies
+
+``` sh
+sudo apt-get install ffmpeg espeak-ng
+```
+
+### Python environment
 
 ``` sh
 git clone https://github.com/rhasspy/piper-recording-studio.git
@@ -42,11 +52,14 @@ python3 -m pip install --upgrade pip
 python3 -m pip install -r requirements.txt
 ```
 
-System dependencies:
+### Additional dependencies by feature
 
-``` sh
-sudo apt-get install ffmpeg espeak-ng
-```
+| Feature | Requirements file | System packages |
+|---------|------------------|-----------------|
+| Web UI + ElevenLabs | `requirements.txt` | — |
+| Dataset export | `requirements_export.txt` | `ffmpeg` |
+| Training | Installed by `train/setup_training.sh` | `ffmpeg`, `espeak-ng`, NVIDIA CUDA |
+| Voice testing | `pip install piper-tts` | — |
 
 
 ## Running without Docker
@@ -176,35 +189,45 @@ After generating audio, use the built-in training guide to create a custom Piper
 - **NVIDIA GPU** with at least 8 GB VRAM (more VRAM allows larger batch sizes and faster training)
 - NVIDIA drivers + CUDA installed
 - System packages: `sudo apt-get install ffmpeg espeak-ng`
+- No HuggingFace account required — all checkpoints are publicly available
 
 ### Quick start
 
 ``` sh
 # 1. Export dataset (--audio-glob '*.wav' required for ElevenLabs audio)
+pip install -r requirements_export.txt
 python3 -m export_dataset --audio-glob '*.wav' output/en-GB/ dataset_en-GB/
 
 # 2. Run the automated setup (clones Piper, downloads checkpoint, preprocesses)
 bash train/setup_training.sh
 
-# 3. Follow the printed instructions to start training
+# 3. Start training via the web UI or command line
+python3 -m piper_recording_studio
+# Visit http://localhost:8000/train and click 'Start Training'
 ```
 
 The setup script handles:
 - Cloning the Piper repo and installing dependencies (with pinned pip<24.1 for compatibility)
-- Downloading the English medium pre-trained checkpoint (~400 MB)
+- Downloading a pre-trained checkpoint from HuggingFace (no auth required)
 - Preprocessing your dataset into training-ready tensors
 
 ### Web UI guide
 
-Visit http://localhost:8000/train (or click **Training Guide** on the home page) for a step-by-step walkthrough with commands tailored to your dataset, including GPU batch size recommendations and monitoring tips.
+Visit http://localhost:8000/train (or click **Training Guide** on the home page) for the full pipeline:
+
+* **Dataset status** — shows generated files, export status, and preprocessing state
+* **Checkpoint browser** — select language, voice, and quality tier from 30+ languages; download with progress streaming
+* **Training launcher** — start/stop training with configurable batch size, epochs, and checkpoint frequency; live log streaming
+* **ONNX export** — select any training checkpoint and export to `.onnx` with one click
+* **Voice testing** — type text and hear your trained voice in the browser (requires `pip install piper-tts`)
 
 ### Selecting a checkpoint
 
-The web UI at `/train` includes a **checkpoint browser** with 30+ languages, multiple voices, and low/medium/high quality tiers. Select your language, voice, and quality — then click Download. The high quality tier (~1 GB) is recommended when your GPU has enough VRAM.
+The web UI includes a **checkpoint browser** with 30+ languages, multiple voices per language, and low/medium/high quality tiers. The **high quality tier** (~1 GB) is recommended when your GPU has 16+ GB VRAM.
 
 Fine-tuning from a pre-trained checkpoint produces significantly better results than training from scratch with fewer than 5,000 samples. The checkpoint provides existing knowledge of speech patterns — training only adapts the voice characteristics.
 
-All checkpoints sourced from: https://huggingface.co/datasets/rhasspy/piper-checkpoints
+All checkpoints sourced from: https://huggingface.co/datasets/rhasspy/piper-checkpoints (public, no auth required)
 
 ### Batch size by GPU VRAM
 
@@ -216,6 +239,21 @@ All checkpoints sourced from: https://huggingface.co/datasets/rhasspy/piper-chec
 | 24+ GB | 32-64 |
 
 If you get out-of-memory errors during training, reduce the batch size. Larger batch sizes train faster but don't affect final model quality.
+
+### Disk space
+
+Training checkpoints are ~400 MB each (high quality: ~1 GB). The web UI defaults to saving every 10 epochs. Plan for at least 10–50 GB of free space depending on your checkpoint frequency and training duration.
+
+### Testing your trained voice
+
+After exporting a checkpoint to ONNX (via the web UI or CLI), install Piper for inference:
+
+``` sh
+pip install piper-tts
+echo "Hello, this is my custom voice!" | piper -m my_voice.onnx --output_file test.wav
+```
+
+The web UI at `/train` also has a built-in voice test player.
 
 See [train/README.md](train/README.md) for the complete training guide.
 

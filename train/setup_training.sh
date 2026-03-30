@@ -166,7 +166,7 @@ elif [ -f "$CHECKPOINT_DIR/$CHECKPOINT_FILE" ]; then
     echo "  Checkpoint already exists: $CHECKPOINT_DIR/$CHECKPOINT_FILE"
 else
     echo "  Downloading: $CHECKPOINT_URL"
-    echo "  This may take a few minutes (~400 MB)..."
+    echo "  This may take a few minutes (up to ~1 GB for high quality)..."
     wget -q --show-progress -O "$CHECKPOINT_DIR/$CHECKPOINT_FILE" "$CHECKPOINT_URL"
     echo "  Saved to: $CHECKPOINT_DIR/$CHECKPOINT_FILE"
 fi

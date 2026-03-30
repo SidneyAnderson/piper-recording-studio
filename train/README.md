@@ -22,6 +22,7 @@ This guide walks you through turning your exported dataset into a usable Piper T
 - Python 3.10 with pip
 - System packages: `sudo apt-get install ffmpeg espeak-ng`
 - Your dataset exported to LJSpeech format (see Step 1)
+- No HuggingFace account needed — all checkpoints are publicly available
 
 
 ## Step 1: Export Your Dataset
@@ -73,6 +74,8 @@ bash build_monotonic_align.sh
 
 Fine-tuning from an existing checkpoint is **strongly recommended** for datasets under 5,000 samples. It produces much better results than training from scratch.
 
+All checkpoints are publicly available — **no HuggingFace account or token is required**.
+
 ### Option A: Web UI (recommended)
 
 Visit http://localhost:8000/train and use the **checkpoint browser** in Step 3. Select your language, voice, and quality tier — then click Download. The UI streams download progress.
@@ -98,7 +101,7 @@ wget -O checkpoints/en_GB-cori-high.ckpt \
 | Medium | 22,050 Hz | ~400 MB | Good balance of speed and quality |
 | **High** | **22,050 Hz** | **~1 GB** | **Best quality (recommended when GPU allows)** |
 
-**Important:** Your audio sample rate must match the checkpoint tier. ElevenLabs-generated audio at 24000 Hz will be resampled during preprocessing.
+**Important:** Your audio sample rate must match the checkpoint tier. ElevenLabs-generated audio at 24000 Hz will be resampled automatically during preprocessing.
 
 ### Choosing the right checkpoint
 
@@ -127,7 +130,16 @@ This creates `config.json`, `dataset.jsonl`, and audio tensor files.
 
 ## Step 5: Train (Fine-Tune)
 
+### Option A: Web UI (recommended)
+
+Visit http://localhost:8000/train, configure batch size and epochs, and click **Start Training**. Training log streams live in the browser. You can stop and resume at any time.
+
+### Option B: CLI
+
 ```sh
+cd piper/src/python
+source .venv/bin/activate
+
 python3 -m piper_train \
   --dataset-dir /path/to/training/ \
   --accelerator gpu \
@@ -136,8 +148,8 @@ python3 -m piper_train \
   --validation-split 0.0 \
   --num-test-examples 0 \
   --max_epochs 1000 \
-  --resume_from_checkpoint /path/to/checkpoints/en_US-lessac-medium.ckpt \
-  --checkpoint-epochs 1 \
+  --resume_from_checkpoint /path/to/checkpoints/YOUR_CHECKPOINT.ckpt \
+  --checkpoint-epochs 10 \
   --precision 32
 ```
 
@@ -150,9 +162,7 @@ python3 -m piper_train \
 | 16 GB | 32 |
 | 24+ GB | 32-64 |
 
-Larger batch sizes train faster but don't affect final model quality.
-
-If you get out-of-memory errors, reduce `--batch-size`.
+Larger batch sizes train faster but don't affect final model quality. If you get out-of-memory errors, reduce `--batch-size`.
 
 ### Monitoring training
 
@@ -166,22 +176,26 @@ Visit http://localhost:6006 to watch loss curves. Key metrics:
 - `loss_disc_all` — should decrease and then plateau
 - Stop training when the loss plateaus (typically 500-1000 epochs for fine-tuning)
 
-### Checkpoints
+### Disk space
 
-Checkpoints are saved to `training/lightning_logs/version_0/checkpoints/` every epoch (~400 MB each). You can test any checkpoint without stopping training.
-
-### Disk space warning
-
-Each checkpoint is ~400 MB. With `--checkpoint-epochs 1` and 1000 epochs, that's ~400 GB. Consider:
-- `--checkpoint-epochs 10` to save every 10 epochs instead
+Training checkpoints are ~400 MB each (high quality: ~1 GB). With `--checkpoint-epochs 10` and 1000 epochs, that's roughly 40-100 GB. Manage disk space by:
+- Increasing `--checkpoint-epochs` to save less frequently
 - Periodically deleting old checkpoints you've already tested
+- Keeping at least 10-50 GB free
 
 
 ## Step 6: Export to ONNX
 
-Once training is done (or you want to test a checkpoint):
+### Option A: Web UI
+
+Visit http://localhost:8000/train, select a checkpoint from the dropdown in Step 6, and click **Export Selected Checkpoint**.
+
+### Option B: CLI
 
 ```sh
+cd piper/src/python
+source .venv/bin/activate
+
 python3 -m piper_train.export_onnx \
   /path/to/training/lightning_logs/version_0/checkpoints/CHECKPOINT_FILE.ckpt \
   /path/to/my_voice.onnx
@@ -195,25 +209,35 @@ Both files (`.onnx` and `.onnx.json`) are required — the model will not work w
 
 ## Step 7: Test Your Voice
 
-Install Piper for inference:
+### Option A: Web UI
+
+Visit http://localhost:8000/train, type text in Step 7, and click **Test Voice** to hear it in the browser. Requires `piper-tts` to be installed.
+
+### Option B: CLI
 
 ```sh
 pip install piper-tts
-```
 
-Generate speech:
-
-```sh
 echo "Hello, this is my custom voice!" | piper -m /path/to/my_voice.onnx --output_file test.wav
-```
 
-Play the output:
-
-```sh
+# Play it
 aplay test.wav
 # or
 ffplay test.wav
 ```
+
+
+## Troubleshooting
+
+| Problem | Solution |
+|---------|----------|
+| `pytorch-lightning` install fails | Use `pip<24.1` in the training venv (the setup script handles this) |
+| Out of memory during training | Reduce `--batch-size` |
+| Training loss not decreasing | Check that your audio quality is consistent and clean |
+| Exported model sounds robotic | You may have over-trained — try an earlier checkpoint |
+| `piper` command not found | Run `pip install piper-tts` in your main venv |
+| Checkpoint download fails | Checkpoints are public, no auth needed. Check your internet connection. |
+| `espeak-ng` not found | Run `sudo apt-get install espeak-ng` |
 
 
 ## Tips
@@ -223,3 +247,4 @@ ffplay test.wav
 - **Test during training:** You can export and test any checkpoint while training continues. Try one every 100 epochs to find the sweet spot.
 - **pip version matters:** Piper's `pytorch-lightning~=1.7.0` dependency has invalid metadata that pip>=24.1 rejects. Always use `pip<24.1` in the training venv.
 - **Training from scratch:** Not recommended with under 5,000 samples. If you must, expect to need 2,000+ epochs and the quality may not match fine-tuning.
+- **Resumable:** Training can be stopped and resumed. The web UI and CLI both support `--resume_from_checkpoint` to continue from the latest saved checkpoint.
