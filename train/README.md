@@ -17,7 +17,7 @@ This guide walks you through turning your exported dataset into a usable Piper T
 
 ## Prerequisites
 
-- **NVIDIA GPU** with at least 8 GB VRAM
+- **NVIDIA GPU** with at least 8 GB VRAM (more VRAM allows larger batch sizes and faster training)
 - NVIDIA drivers + CUDA installed
 - Python 3.10 with pip
 - System packages: `sudo apt-get install ffmpeg espeak-ng`
@@ -122,7 +122,7 @@ python3 -m piper_train \
   --dataset-dir /path/to/training/ \
   --accelerator gpu \
   --devices 1 \
-  --batch-size 48 \
+  --batch-size 32 \
   --validation-split 0.0 \
   --num-test-examples 0 \
   --max_epochs 1000 \
@@ -133,13 +133,14 @@ python3 -m piper_train \
 
 ### Adjusting batch size for your GPU
 
-| GPU VRAM | Recommended batch size | Example GPUs |
-|----------|----------------------|--------------|
-| 8 GB | 12 | GTX 1080, RTX 3060 |
-| 10-12 GB | 24 | RTX 3080 |
-| 16 GB | 32 | RTX 4080, A4000 |
-| 24 GB | 32-48 | RTX 3090, RTX 4090 |
-| 32 GB | 48-64 | RTX 5090 |
+| GPU VRAM | Recommended batch size |
+|----------|----------------------|
+| 8 GB | 12 |
+| 10-12 GB | 24 |
+| 16 GB | 32 |
+| 24+ GB | 32-64 |
+
+Larger batch sizes train faster but don't affect final model quality.
 
 If you get out-of-memory errors, reduce `--batch-size`.
 

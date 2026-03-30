@@ -173,7 +173,7 @@ After generating audio, use the built-in training guide to create a custom Piper
 
 ### Prerequisites
 
-- **NVIDIA GPU** with at least 8 GB VRAM (RTX 5090 with 32 GB is ideal)
+- **NVIDIA GPU** with at least 8 GB VRAM (more VRAM allows larger batch sizes and faster training)
 - NVIDIA drivers + CUDA installed
 - System packages: `sudo apt-get install ffmpeg espeak-ng`
 
@@ -204,15 +204,16 @@ With fewer than 5,000 samples, fine-tuning from a pre-trained checkpoint produce
 
 Pre-trained checkpoints: https://huggingface.co/datasets/rhasspy/piper-checkpoints
 
-### Batch size by GPU
+### Batch size by GPU VRAM
 
-| GPU VRAM | Batch Size | Example GPUs |
-|----------|-----------|--------------|
-| 8 GB | 12 | GTX 1080, RTX 3060 |
-| 10-12 GB | 24 | RTX 3080 |
-| 16 GB | 32 | RTX 4080, A4000 |
-| 24 GB | 32-48 | RTX 3090, RTX 4090 |
-| 32 GB | 48-64 | RTX 5090 |
+| VRAM | Batch Size |
+|------|-----------|
+| 8 GB | 12 |
+| 10-12 GB | 24 |
+| 16 GB | 32 |
+| 24+ GB | 32-64 |
+
+If you get out-of-memory errors during training, reduce the batch size. Larger batch sizes train faster but don't affect final model quality.
 
 See [train/README.md](train/README.md) for the complete training guide.
 

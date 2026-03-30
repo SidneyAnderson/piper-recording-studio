@@ -377,7 +377,7 @@ def main() -> None:
                 resume_ckpt = str(existing[-1])
 
         data = await request.get_json()
-        batch_size = data.get("batchSize", 48)
+        batch_size = data.get("batchSize", 32)
         max_epochs = data.get("maxEpochs", 1000)
         checkpoint_epochs = data.get("checkpointEpochs", 10)
 

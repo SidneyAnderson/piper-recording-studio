@@ -170,17 +170,17 @@ python3 -m piper_train.preprocess \
                                 <div id="trainLog" class="border rounded p-2 bg-dark text-light" style="height: 20em; overflow-y: auto; font-family: monospace; font-size: 0.8em; white-space: pre-wrap;"></div>
                             </div>
 
-                            <h6 class="mt-3">Batch size by GPU:</h6>
+                            <h6 class="mt-3">Batch size by GPU VRAM:</h6>
                             <table class="table table-sm">
-                                <thead><tr><th>GPU VRAM</th><th>Batch Size</th><th>Example GPUs</th></tr></thead>
+                                <thead><tr><th>VRAM</th><th>Batch Size</th></tr></thead>
                                 <tbody>
-                                    <tr><td>8 GB</td><td>12</td><td>GTX 1080, RTX 3060</td></tr>
-                                    <tr><td>10-12 GB</td><td>24</td><td>RTX 3080</td></tr>
-                                    <tr><td>16 GB</td><td>32</td><td>RTX 4080, A4000</td></tr>
-                                    <tr><td>24 GB</td><td>32-48</td><td>RTX 3090/4090</td></tr>
-                                    <tr><td>32 GB</td><td>48-64</td><td>RTX 5090</td></tr>
+                                    <tr><td>8 GB</td><td>12</td></tr>
+                                    <tr><td>10-12 GB</td><td>24</td></tr>
+                                    <tr><td>16 GB</td><td>32</td></tr>
+                                    <tr><td>24+ GB</td><td>32-64</td></tr>
                                 </tbody>
                             </table>
+                            <p class="text-muted" style="font-size:0.85em;">Larger batch sizes train faster but don't affect final model quality. If you get out-of-memory errors, reduce the batch size.</p>
 
                             <div class="alert alert-info mt-2">
                                 <strong>Monitor training:</strong> Run <code>tensorboard --logdir training/lightning_logs</code> and visit <code>http://localhost:6006</code>. Watch <code>loss_disc_all</code> — stop when it plateaus (usually 500-1000 epochs).
