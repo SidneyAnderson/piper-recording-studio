@@ -269,7 +269,10 @@
                                             </div>
                                         </div>
                                         <p class="text-muted mb-0" style="font-size:0.8em;">
-                                            Both losses should decrease over time and then plateau. When they flatten out, training is converging. If they start rising, you may be over-training — try testing an earlier checkpoint.
+                                            <strong>How to read:</strong> Both losses should gradually decrease and then flatten out (plateau). Early oscillation is normal — the model is adjusting to your data. The trend becomes meaningful after 200+ epochs.
+                                            <br><strong>Converging (good):</strong> Lines slope down then flatten — your model is learning the voice.
+                                            <br><strong>Over-training (bad):</strong> Lines were flat but start rising — stop and test an earlier checkpoint.
+                                            <br><strong>Early training:</strong> Jagged, bouncing lines are expected in the first 100-200 epochs.
                                         </p>
                                     </div>
                                     <!-- Log Tab -->
