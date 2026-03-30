@@ -174,6 +174,16 @@ if [ -f "$PIPER_MAIN" ] && ! grep -q "add_safe_globals" "$PIPER_MAIN"; then
     sed -i '/^import torch$/a import pathlib\nif hasattr(torch.serialization, "add_safe_globals"):\n    torch.serialization.add_safe_globals([pathlib.PosixPath, pathlib.WindowsPath])' "$PIPER_MAIN"
 fi
 
+# Patch LR scheduler compatibility for PyTorch 2.x + pytorch-lightning 1.7
+LIGHTNING_FILE="piper_train/vits/lightning.py"
+if [ -f "$LIGHTNING_FILE" ] && ! grep -q "lr_scheduler_step" "$LIGHTNING_FILE"; then
+    echo "  Patching LR scheduler for PyTorch 2.x compatibility..."
+    sed -i '/return optimizers, schedulers/a\
+\
+    def lr_scheduler_step(self, scheduler, optimizer_idx, metric):\
+        scheduler.step()' "$LIGHTNING_FILE"
+fi
+
 echo "  Piper training environment ready."
 echo ""
 
