@@ -67,7 +67,12 @@
                             <div class="form-check mb-3">
                                 <input class="form-check-input" type="checkbox" id="deleteDataCheck">
                                 <label class="form-check-label" for="deleteDataCheck">
-                                    Also delete all generated audio, training data, and exported models for this profile
+                                    Also delete all associated data:
+                                    <ul class="mb-0 mt-1" style="font-size:0.9em;">
+                                        <li>Training checkpoints (lightning_logs/)</li>
+                                        <li>Exported ONNX models (models/profile_name.*)</li>
+                                        <li>Voice data files</li>
+                                    </ul>
                                 </label>
                             </div>
                             <p class="text-danger"><strong>This action cannot be undone.</strong> Type the profile name to confirm:</p>

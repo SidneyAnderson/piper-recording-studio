@@ -1093,14 +1093,31 @@ print(json.dumps(results))
         if not profile_path.exists():
             return jsonify({"ok": False, "error": "Profile not found."})
 
+        deleted_items = []
+
         if delete_data:
-            # Remove all profile-specific data
+            # Remove profile-specific voice_data directory
             profile_data_dir = output_dir.parent / "voice_data" / profile_id
             if profile_data_dir.exists():
                 shutil.rmtree(profile_data_dir)
+                deleted_items.append("voice data")
+
+            # Remove exported models matching this profile name
+            if models_dir.exists():
+                safe_id = profile_id.replace(" ", "_")
+                for model_file in models_dir.glob(f"{safe_id}.*"):
+                    model_file.unlink()
+                    deleted_items.append(f"model: {model_file.name}")
+
+            # Remove training checkpoints and logs
+            if training_dir.exists():
+                lightning_dir = training_dir / "lightning_logs"
+                if lightning_dir.exists():
+                    shutil.rmtree(lightning_dir)
+                    deleted_items.append("training checkpoints")
 
         profile_path.unlink()
-        return jsonify({"ok": True})
+        return jsonify({"ok": True, "deleted": deleted_items})
 
     @app.route("/api/elevenlabs/config", methods=["GET"])
     async def api_elevenlabs_config() -> Response:
