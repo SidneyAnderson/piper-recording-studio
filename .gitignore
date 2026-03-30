@@ -30,6 +30,7 @@ lightning_logs/
 
 # Runtime files
 training.log
+training.pid
 test_voice.wav
 
 # Secrets

@@ -469,7 +469,7 @@ def main() -> None:
         preprocessed = (training_dir / "config.json").exists()
         checkpoint_exists = any(checkpoints_dir.glob("*.ckpt")) if checkpoints_dir.exists() else False
 
-        training_running = training_process is not None and training_process.returncode is None
+        training_running = _is_training_running()
 
         # Check if piper is installed
         piper_installed = (piper_dir / "src" / "python" / ".venv" / "bin" / "python3").exists()
@@ -491,7 +491,7 @@ def main() -> None:
         nonlocal training_process
         import subprocess
 
-        if training_process is not None and training_process.returncode is None:
+        if _is_training_running():
             return jsonify({"ok": False, "error": "Training is already running."})
 
         if not (training_dir / "config.json").exists():
@@ -591,15 +591,37 @@ def main() -> None:
 
         log_file = open(training_log_path, "w")
         env = dict(os.environ, PYTHONUNBUFFERED="1")
+        # start_new_session=True detaches training from the web server so
+        # it survives server restarts (Ctrl+C won't kill training)
         training_process = subprocess.Popen(
             cmd,
             stdout=log_file,
             stderr=subprocess.STDOUT,
             cwd=str(piper_dir / "src" / "python"),
             env=env,
+            start_new_session=True,
         )
 
+        # Save PID so we can track training across server restarts
+        pid_path = output_dir.parent / "training.pid"
+        pid_path.write_text(str(training_process.pid))
+
         return jsonify({"ok": True, "pid": training_process.pid})
+
+    def _is_training_running() -> bool:
+        """Check if training is running, even across server restarts."""
+        nonlocal training_process
+        if training_process is not None and training_process.returncode is None:
+            return True
+        pid_path = output_dir.parent / "training.pid"
+        if pid_path.exists():
+            try:
+                pid = int(pid_path.read_text().strip())
+                os.kill(pid, 0)  # Check if process exists
+                return True
+            except (ValueError, ProcessLookupError, PermissionError):
+                pid_path.unlink(missing_ok=True)
+        return False
 
     @app.route("/api/training/stop", methods=["POST"])
     async def api_training_stop() -> Response:
@@ -607,14 +629,32 @@ def main() -> None:
         nonlocal training_process
         import signal
 
-        if training_process is None or training_process.returncode is not None:
+        pid_path = output_dir.parent / "training.pid"
+        pid = None
+
+        if training_process is not None and training_process.returncode is None:
+            pid = training_process.pid
+        elif pid_path.exists():
+            try:
+                pid = int(pid_path.read_text().strip())
+                os.kill(pid, 0)
+            except (ValueError, ProcessLookupError, PermissionError):
+                pid = None
+
+        if pid is None:
             return jsonify({"message": "Training is not running."})
 
-        training_process.send_signal(signal.SIGINT)
         try:
-            training_process.wait(timeout=30)
-        except Exception:
-            training_process.kill()
+            os.killpg(os.getpgid(pid), signal.SIGINT)
+        except (ProcessLookupError, PermissionError):
+            pass
+
+        if training_process is not None:
+            try:
+                training_process.wait(timeout=30)
+            except Exception:
+                pass
+        pid_path.unlink(missing_ok=True)
 
         return jsonify({"message": "Training stopped. Last checkpoint has been saved."})
 
@@ -637,7 +677,7 @@ def main() -> None:
                             yield new_data
 
                 # Check if training is still running
-                if training_process is None or training_process.returncode is not None:
+                if not _is_training_running():
                     # Read any remaining data
                     if training_log_path.exists():
                         with open(training_log_path, "r") as f:
@@ -667,7 +707,7 @@ def main() -> None:
         import re
         nonlocal training_process
 
-        running = training_process is not None and training_process.returncode is None
+        running = _is_training_running()
 
         # Find all training checkpoints and determine progress
         lightning_dir = training_dir / "lightning_logs"
