@@ -186,6 +186,13 @@ if [ -f "$LIGHTNING_FILE" ] && ! grep -q "lr_scheduler_step" "$LIGHTNING_FILE"; 
         scheduler.step()' "$LIGHTNING_FILE"
 fi
 
+# Keep all checkpoints instead of just the latest (save_top_k=-1)
+PIPER_MAIN="piper_train/__main__.py"
+if [ -f "$PIPER_MAIN" ] && grep -q "ModelCheckpoint(every_n_epochs" "$PIPER_MAIN" && ! grep -q "save_top_k" "$PIPER_MAIN"; then
+    echo "  Patching checkpoint saving to keep all checkpoints..."
+    sed -i 's/ModelCheckpoint(every_n_epochs=args.checkpoint_epochs)/ModelCheckpoint(every_n_epochs=args.checkpoint_epochs, save_top_k=-1)/' "$PIPER_MAIN"
+fi
+
 # Patch ONNX export to use legacy exporter (PyTorch 2.6+ dynamo is incompatible with VITS)
 EXPORT_FILE="piper_train/export_onnx.py"
 if [ -f "$EXPORT_FILE" ] && ! grep -q "dynamo=False" "$EXPORT_FILE"; then
