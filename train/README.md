@@ -47,7 +47,7 @@ Verify: `wc -l dataset_en-GB/metadata.csv` should show your prompt count.
 **Option A: Automated setup (recommended)**
 
 ```sh
-bash train/setup_training.sh
+bash setup_training.sh
 ```
 
 This handles steps 2-4 automatically: clones Piper, installs dependencies, downloads the checkpoint, and preprocesses your dataset.

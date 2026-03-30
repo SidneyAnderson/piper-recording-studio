@@ -2,13 +2,12 @@
 set -euo pipefail
 
 # Piper TTS Training Setup Script
-# Usage: bash train/setup_training.sh [OPTIONS]
+# Usage: bash setup_training.sh [OPTIONS]
 #
 # This script sets up the Piper training environment, downloads a checkpoint,
 # and preprocesses your dataset. After running, you'll be ready to train.
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Defaults
 LANGUAGE="en"

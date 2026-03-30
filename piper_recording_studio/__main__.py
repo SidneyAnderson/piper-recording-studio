@@ -362,7 +362,7 @@ def main() -> None:
         """Run the training setup script (clone Piper, install deps)."""
         import subprocess
 
-        setup_script = output_dir.parent / "train" / "setup_training.sh"
+        setup_script = output_dir.parent / "setup_training.sh"
         if not setup_script.exists():
             return jsonify({"ok": False, "error": "Setup script not found."})
 

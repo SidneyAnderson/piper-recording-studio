@@ -58,7 +58,7 @@ python3 -m pip install -r requirements.txt
 |---------|------------------|-----------------|
 | Web UI + ElevenLabs | `requirements.txt` | — |
 | Dataset export | `requirements_export.txt` | `ffmpeg` |
-| Training | Installed by `train/setup_training.sh` | `ffmpeg`, `espeak-ng`, NVIDIA CUDA |
+| Training | Installed by `setup_training.sh` | `ffmpeg`, `espeak-ng`, NVIDIA CUDA |
 | Voice testing | `pip install piper-tts` | — |
 
 
@@ -239,7 +239,7 @@ pip install -r requirements_export.txt
 python3 -m export_dataset --audio-glob '*.wav' output/en-GB/ dataset_en-GB/
 
 # 2. Run the automated setup (clones Piper, downloads checkpoint, preprocesses)
-bash train/setup_training.sh
+bash setup_training.sh
 
 # 3. Start training via the web UI or command line
 python3 -m piper_recording_studio
