@@ -764,13 +764,37 @@ def main() -> None:
 
     @app.route("/api/profiles", methods=["GET"])
     async def api_profiles_list() -> Response:
-        """List saved voice profiles."""
+        """List saved voice profiles with training stats."""
         profiles = []
         if profiles_dir.exists():
             for f in sorted(profiles_dir.glob("*.json")):
                 try:
                     data = json.loads(f.read_text())
-                    data["id"] = f.stem
+                    profile_id = f.stem
+                    data["id"] = profile_id
+
+                    # Count generated audio files
+                    lang = data.get("language", "")
+                    profile_output = output_dir.parent / "voice_data" / profile_id / "output"
+                    if profile_output.exists() and lang:
+                        lang_dir = profile_output / lang
+                        data["generated"] = len(list(lang_dir.rglob("*.wav"))) if lang_dir.exists() else 0
+                    else:
+                        # Check legacy output dir
+                        if lang:
+                            lang_dir = output_dir / lang
+                            data["generated"] = len(list(lang_dir.rglob("*.wav"))) if lang_dir.exists() else 0
+                        else:
+                            data["generated"] = 0
+
+                    # Check training state
+                    profile_training = output_dir.parent / "voice_data" / profile_id / "training"
+                    data["has_training"] = profile_training.exists() and (profile_training / "config.json").exists()
+
+                    # Check for exported model
+                    profile_model = output_dir.parent / "voice_data" / profile_id / "my_voice.onnx"
+                    data["has_model"] = profile_model.exists()
+
                     profiles.append(data)
                 except Exception:
                     pass
@@ -802,10 +826,23 @@ def main() -> None:
 
     @app.route("/api/profiles/<profile_id>", methods=["DELETE"])
     async def api_profiles_delete(profile_id: str) -> Response:
-        """Delete a voice profile."""
+        """Delete a voice profile and optionally its data."""
+        import shutil
+
+        data = await request.get_json() if request.content_length else {}
+        delete_data = data.get("deleteData", False) if data else False
+
         profile_path = profiles_dir / f"{profile_id}.json"
-        if profile_path.exists():
-            profile_path.unlink()
+        if not profile_path.exists():
+            return jsonify({"ok": False, "error": "Profile not found."})
+
+        if delete_data:
+            # Remove all profile-specific data
+            profile_data_dir = output_dir.parent / "voice_data" / profile_id
+            if profile_data_dir.exists():
+                shutil.rmtree(profile_data_dir)
+
+        profile_path.unlink()
         return jsonify({"ok": True})
 
     @app.route("/api/elevenlabs/config", methods=["GET"])

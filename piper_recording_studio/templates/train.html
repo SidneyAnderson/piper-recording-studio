@@ -38,6 +38,47 @@
             <div class="row justify-content-center">
                 <div class="col-md-10">
 
+                    <!-- Voice Profile Selector -->
+                    <div class="card mb-4">
+                        <div class="card-body">
+                            <h5 class="card-title">Voice Profile</h5>
+                            <p class="text-muted">Select the voice profile to train. Profiles are created on the <a href="/generate">Generate</a> page.</p>
+                            <div class="row align-items-end">
+                                <div class="col-md-8 mb-2">
+                                    <select class="form-control" id="trainProfileSelect">
+                                        <option value="">Loading profiles...</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-4 mb-2">
+                                    <button id="deleteProfileBtn" type="button" class="btn btn-outline-danger w-100" disabled>
+                                        <i class="fas fa-trash"></i> Delete Profile
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="trainProfileInfo" class="mt-2" style="font-size: 0.85em;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Delete Confirmation Modal -->
+                    <div id="deleteModal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:9999;">
+                        <div style="background:white; border-radius:8px; padding:30px; max-width:500px; margin:15% auto;">
+                            <h5 style="color:#dc3545;">Delete Voice Profile</h5>
+                            <p id="deleteModalText"></p>
+                            <div class="form-check mb-3">
+                                <input class="form-check-input" type="checkbox" id="deleteDataCheck">
+                                <label class="form-check-label" for="deleteDataCheck">
+                                    Also delete all generated audio, training data, and exported models for this profile
+                                </label>
+                            </div>
+                            <p class="text-danger"><strong>This action cannot be undone.</strong> Type the profile name to confirm:</p>
+                            <input type="text" class="form-control mb-3" id="deleteConfirmInput" placeholder="Type profile name here">
+                            <div class="d-flex gap-2">
+                                <button id="deleteConfirmBtn" type="button" class="btn btn-danger" disabled>Delete Permanently</button>
+                                <button id="deleteCancelBtn" type="button" class="btn btn-secondary">Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Status -->
                     <div class="card mb-4">
                         <div class="card-body">
@@ -336,6 +377,109 @@
                 }
                 updateTrainMode();
             }
+
+            // --- Training profile selector ---
+            let selectedProfile = null;
+
+            async function loadTrainProfiles() {
+                try {
+                    const resp = await fetch('/api/profiles');
+                    const data = await resp.json();
+                    const sel = q('#trainProfileSelect');
+                    sel.innerHTML = '';
+
+                    if (!data.profiles || data.profiles.length === 0) {
+                        sel.innerHTML = '<option value="">No profiles found — create one on the Generate page</option>';
+                        q('#deleteProfileBtn').disabled = true;
+                        return;
+                    }
+
+                    data.profiles.forEach(p => {
+                        const opt = document.createElement('option');
+                        opt.value = p.id;
+                        const stats = [];
+                        if (p.generated > 0) stats.push(`${p.generated} samples`);
+                        if (p.has_training) stats.push('preprocessed');
+                        if (p.has_model) stats.push('model exported');
+                        const info = stats.length ? ` (${stats.join(', ')})` : '';
+                        opt.textContent = `${p.name}${info}`;
+                        opt.dataset.profile = JSON.stringify(p);
+                        sel.appendChild(opt);
+                    });
+
+                    q('#deleteProfileBtn').disabled = false;
+                    // Trigger change to load first profile
+                    sel.dispatchEvent(new Event('change'));
+                } catch(e) { /* ignore */ }
+            }
+
+            q('#trainProfileSelect').addEventListener('change', function() {
+                const opt = this.options[this.selectedIndex];
+                if (opt && opt.dataset && opt.dataset.profile) {
+                    const p = JSON.parse(opt.dataset.profile);
+                    selectedProfile = p;
+                    const infoEl = q('#trainProfileInfo');
+                    let html = `<strong>${p.name}</strong>`;
+                    if (p.voice_id) html += ` — Voice: <code>${p.voice_id}</code>`;
+                    if (p.language) html += ` — Language: ${p.language}`;
+                    if (p.training_mode) html += ` — Mode: ${p.training_mode}`;
+                    infoEl.innerHTML = html;
+
+                    // Update training mode
+                    if (p.training_mode) {
+                        q('#trainMode').value = p.training_mode;
+                        updateTrainMode();
+                    }
+
+                    q('#deleteProfileBtn').disabled = false;
+                } else {
+                    selectedProfile = null;
+                    q('#trainProfileInfo').innerHTML = '';
+                    q('#deleteProfileBtn').disabled = true;
+                }
+            });
+
+            // --- Delete profile with double confirmation ---
+            let profileToDelete = null;
+
+            q('#deleteProfileBtn').addEventListener('click', function() {
+                if (!selectedProfile) return;
+                profileToDelete = selectedProfile;
+                q('#deleteModalText').textContent = `Are you sure you want to delete the profile "${selectedProfile.name}"?`;
+                q('#deleteConfirmInput').value = '';
+                q('#deleteDataCheck').checked = false;
+                q('#deleteConfirmBtn').disabled = true;
+                q('#deleteModal').style.display = '';
+            });
+
+            q('#deleteConfirmInput').addEventListener('input', function() {
+                q('#deleteConfirmBtn').disabled = this.value !== profileToDelete.name;
+            });
+
+            q('#deleteCancelBtn').addEventListener('click', function() {
+                q('#deleteModal').style.display = 'none';
+                profileToDelete = null;
+            });
+
+            q('#deleteConfirmBtn').addEventListener('click', async function() {
+                if (!profileToDelete) return;
+                const deleteData = q('#deleteDataCheck').checked;
+                try {
+                    await fetch(`/api/profiles/${profileToDelete.id}`, {
+                        method: 'DELETE',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ deleteData }),
+                    });
+                    q('#deleteModal').style.display = 'none';
+                    q('#trainProfileInfo').innerHTML = `<span class="text-success">Profile "${profileToDelete.name}" deleted.</span>`;
+                    profileToDelete = null;
+                    selectedProfile = null;
+                    loadTrainProfiles();
+                    checkDataset();
+                } catch(e) {
+                    q('#trainProfileInfo').innerHTML = `<span class="text-danger">Error: ${e.message}</span>`;
+                }
+            });
 
             // --- Step 1: Export Dataset ---
             q('#exportDatasetBtn').addEventListener('click', async function() {
@@ -757,6 +901,7 @@
                 q('#downloadCkptBtn').disabled = false;
             });
 
+            loadTrainProfiles();
             loadAvailableCheckpoints();
             checkDataset();
         </script>
