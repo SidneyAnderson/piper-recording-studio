@@ -103,6 +103,46 @@ sudo chown -R "$(id -u):$(id -u)" output/
 See `--help` for more options. You may need to adjust the silence detection parameters to correctly remove button clicks and keypresses.
 
 
+## Generating Training Prompts
+
+For high-quality from-scratch voice training, you need 10,000+ diverse sentences. The built-in prompt generator creates phonetically rich, natural-sounding text optimized for TTS training.
+
+``` sh
+# Generate 11,000 prompts for British English
+python3 -m generate_prompts --count 11000 --language en-GB
+```
+
+The generator follows ElevenLabs best practices:
+- Sentences between 10-30 words for optimal TTS quality
+- Numbers written as words, abbreviations expanded
+- All English phonemes covered through natural vocabulary
+- 18 topic categories for diversity (daily life, travel, science, British culture, etc.)
+- Mix of prosodic patterns (statements, questions, commands, exclamations)
+- Both British and General English phrasing
+
+Options:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--count` | `11000` | Number of prompts to generate |
+| `--language` | `en-GB` | Language code for output directory |
+| `--seed` | `42` | Random seed for reproducibility |
+| `--categories` | all | Specific categories to generate |
+| `--dry-run` | — | Print to stdout instead of writing file |
+
+Generated prompts are saved to `prompts/<Language>_<code>/` in the format expected by the recording studio and ElevenLabs generator.
+
+### Recommended ElevenLabs settings for training data
+
+For maximum consistency when generating a large dataset:
+
+| Setting | Recommended | Why |
+|---------|------------|-----|
+| Stability | 0.75-0.85 | Higher values produce more consistent, predictable output |
+| Similarity Boost | 0.80-1.00 | Keeps output closer to the voice profile |
+| Sample Rate | 24000 Hz | Good balance of quality and compatibility |
+
+
 ## ElevenLabs TTS Generation
 
 Generate audio from prompts using the [ElevenLabs](https://elevenlabs.io/) API instead of recording manually. Useful for creating synthetic training datasets.
