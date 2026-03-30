@@ -78,7 +78,7 @@ All checkpoints are publicly available — **no HuggingFace account or token is 
 
 ### Option A: Web UI (recommended)
 
-Visit http://localhost:8000/train and use the **checkpoint browser** in Step 3. Select your language, voice, and quality tier — then click Download. The UI streams download progress.
+Visit http://localhost:8000/train and use the **checkpoint browser** in Step 3. Select your locale and quality tier — the best checkpoint is auto-selected. Click Download. The UI streams download progress.
 
 ### Option B: CLI
 
@@ -107,7 +107,7 @@ wget -O checkpoints/en_GB-cori-high.ckpt \
 
 - Pick a checkpoint in the **same language** as your training data for best results
 - **High quality** produces the best output and is recommended if your GPU has 16+ GB VRAM
-- The voice name in the checkpoint doesn't matter much — fine-tuning will adapt it to your dataset
+- The checkpoint's original voice doesn't matter — fine-tuning replaces it with your dataset's voice
 
 
 ## Step 4: Preprocess

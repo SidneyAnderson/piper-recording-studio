@@ -256,14 +256,14 @@ The setup script handles:
 Visit http://localhost:8000/train (or click **Training Guide** on the home page) for the full pipeline:
 
 * **Dataset status** — shows generated files, export status, and preprocessing state
-* **Checkpoint browser** — select language, voice, and quality tier from 30+ languages; download with progress streaming
+* **Checkpoint browser** — select locale and quality tier from 30+ languages; best checkpoint auto-selected; download with progress streaming
 * **Training launcher** — start/stop training with configurable batch size, epochs, and checkpoint frequency; live log streaming
 * **ONNX export** — select any training checkpoint and export to `.onnx` with one click
 * **Voice testing** — type text and hear your trained voice in the browser (requires `pip install piper-tts`)
 
 ### Selecting a checkpoint
 
-The web UI includes a **checkpoint browser** with 30+ languages, multiple voices per language, and low/medium/high quality tiers. The **high quality tier** (~1 GB) is recommended when your GPU has 16+ GB VRAM.
+The web UI includes a **checkpoint browser** — select your locale and quality tier (low/medium/high). The best checkpoint is auto-selected. The **high quality tier** (~1 GB) is recommended when your GPU has 16+ GB VRAM.
 
 Fine-tuning from a pre-trained checkpoint produces significantly better results than training from scratch with fewer than 5,000 samples. The checkpoint provides existing knowledge of speech patterns — training only adapts the voice characteristics.
 
