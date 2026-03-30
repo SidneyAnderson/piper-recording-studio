@@ -155,6 +155,8 @@ source .venv/bin/activate
 # that pip>=24.1 rejects. Pin pip to a compatible version.
 pip3 install "pip<24.1" wheel setuptools -q
 pip3 install -e . -q
+# Pin compatible versions — Piper's deps pull in versions that are too new
+pip3 install "numpy<2" "torchmetrics==0.11.4" -q
 
 if [ -f "build_monotonic_align.sh" ]; then
     echo "  Building monotonic alignment..."
