@@ -602,26 +602,34 @@ def main() -> None:
             start_new_session=True,
         )
 
-        # Save PID so we can track training across server restarts
+        # Save PID and start time so we can track training across server restarts
+        import time as _time
         pid_path = output_dir.parent / "training.pid"
-        pid_path.write_text(str(training_process.pid))
+        pid_path.write_text(f"{training_process.pid}\n{_time.time()}")
 
         return jsonify({"ok": True, "pid": training_process.pid})
+
+    def _read_training_pid_file() -> tuple:
+        """Read PID and start time from training.pid file. Returns (pid, start_time) or (None, None)."""
+        pid_path = output_dir.parent / "training.pid"
+        if pid_path.exists():
+            try:
+                lines = pid_path.read_text().strip().split("\n")
+                pid = int(lines[0])
+                start_time = float(lines[1]) if len(lines) > 1 else 0
+                os.kill(pid, 0)  # Check if process exists
+                return pid, start_time
+            except (ValueError, ProcessLookupError, PermissionError, IndexError):
+                pid_path.unlink(missing_ok=True)
+        return None, None
 
     def _is_training_running() -> bool:
         """Check if training is running, even across server restarts."""
         nonlocal training_process
         if training_process is not None and training_process.returncode is None:
             return True
-        pid_path = output_dir.parent / "training.pid"
-        if pid_path.exists():
-            try:
-                pid = int(pid_path.read_text().strip())
-                os.kill(pid, 0)  # Check if process exists
-                return True
-            except (ValueError, ProcessLookupError, PermissionError):
-                pid_path.unlink(missing_ok=True)
-        return False
+        pid, _ = _read_training_pid_file()
+        return pid is not None
 
     @app.route("/api/training/stop", methods=["POST"])
     async def api_training_stop() -> Response:
@@ -764,6 +772,9 @@ def main() -> None:
             except Exception:
                 pass
 
+        # Get training start time from PID file
+        _, train_start_time = _read_training_pid_file()
+
         return jsonify({
             "running": running,
             "latest_epoch": latest_epoch,
@@ -771,6 +782,7 @@ def main() -> None:
             "start_epoch": start_epoch,
             "total_checkpoints": total_checkpoints,
             "last_log": last_log_lines,
+            "start_time": train_start_time or 0,
         })
 
     @app.route("/api/training/stats")

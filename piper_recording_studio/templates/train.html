@@ -808,11 +808,27 @@
                         loadCheckpoints();
                     }
 
-                    if (trainStartTime) {
-                        const elapsed = Math.round((Date.now() - trainStartTime) / 1000);
-                        const mins = Math.floor(elapsed / 60);
+                    // Use server's start time so elapsed survives page refresh
+                    const serverStart = data.start_time ? data.start_time * 1000 : trainStartTime;
+                    if (serverStart) {
+                        const elapsed = Math.round((Date.now() - serverStart) / 1000);
+                        const hrs = Math.floor(elapsed / 3600);
+                        const mins = Math.floor((elapsed % 3600) / 60);
                         const secs = elapsed % 60;
-                        q('#trainElapsed').textContent = `Elapsed: ${mins}m ${secs}s`;
+                        const elapsedStr = hrs > 0 ? `${hrs}h ${mins}m ${secs}s` : `${mins}m ${secs}s`;
+
+                        // Estimate time remaining
+                        let etaStr = '';
+                        if (currentEpoch !== null && done > 5) {
+                            const secsPerEpoch = elapsed / done;
+                            const remaining = Math.max(0, maxEpochs - done);
+                            const etaSecs = Math.round(remaining * secsPerEpoch);
+                            const etaHrs = Math.floor(etaSecs / 3600);
+                            const etaMins = Math.floor((etaSecs % 3600) / 60);
+                            etaStr = etaHrs > 0 ? ` — ETA: ~${etaHrs}h ${etaMins}m` : ` — ETA: ~${etaMins}m`;
+                        }
+
+                        q('#trainElapsed').textContent = `Elapsed: ${elapsedStr}${etaStr}`;
                     }
 
                     if (!data.running && progressInterval) {
