@@ -290,7 +290,7 @@ After exporting a checkpoint to ONNX (via the web UI or CLI), install Piper for 
 
 ``` sh
 pip install piper-tts
-echo "Hello, this is my custom voice!" | piper -m my_voice.onnx --output_file test.wav
+echo "Hello, this is my custom voice!" | piper -m models/British_Narrator.510.onnx --output_file test.wav
 ```
 
 The web UI at `/train` also has a built-in voice test player.

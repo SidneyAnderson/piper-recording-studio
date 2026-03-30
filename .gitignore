@@ -22,8 +22,7 @@ __pycache__/
 /checkpoints/
 /piper/
 lightning_logs/
-*.onnx
-*.onnx.json
+/models/
 
 # Voice profiles and per-profile data
 /voice_profiles/

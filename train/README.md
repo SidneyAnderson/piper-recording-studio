@@ -192,16 +192,20 @@ Visit http://localhost:8000/train, select a checkpoint from the dropdown in Step
 
 ### Option B: CLI
 
+The web UI exports to `models/<profile_name>.<epoch>.onnx` (e.g. `models/British_Narrator.510.onnx`).
+
+**CLI alternative:**
+
 ```sh
 cd piper/src/python
 source .venv/bin/activate
 
 python3 -m piper_train.export_onnx \
-  /path/to/training/lightning_logs/version_0/checkpoints/CHECKPOINT_FILE.ckpt \
-  /path/to/my_voice.onnx
+  /path/to/training/lightning_logs/version_0/checkpoints/epoch=509-step=775720.ckpt \
+  /path/to/models/My_Voice.510.onnx
 
 # IMPORTANT: the config file MUST accompany the model
-cp /path/to/training/config.json /path/to/my_voice.onnx.json
+cp /path/to/training/config.json /path/to/models/My_Voice.510.onnx.json
 ```
 
 Both files (`.onnx` and `.onnx.json`) are required — the model will not work without the config.
@@ -218,7 +222,7 @@ Visit http://localhost:8000/train, type text in Step 7, and click **Test Voice**
 ```sh
 pip install piper-tts
 
-echo "Hello, this is my custom voice!" | piper -m /path/to/my_voice.onnx --output_file test.wav
+echo "Hello, this is my custom voice!" | piper -m models/British_Narrator.510.onnx --output_file test.wav
 
 # Play it
 aplay test.wav

@@ -699,21 +699,38 @@ def main() -> None:
             "onnx_exists": onnx_path.exists(),
         })
 
+    models_dir = output_dir.parent / "models"
+
     @app.route("/api/training/export", methods=["POST"])
     async def api_training_export() -> Response:
-        """Export a checkpoint to ONNX."""
+        """Export a checkpoint to ONNX with profile-based naming."""
+        import re
         import subprocess
+        import shutil
 
         data = await request.get_json()
         checkpoint = data.get("checkpoint", "")
+        profile_name = data.get("profileName", "my_voice")
         ckpt_path = training_dir / checkpoint
 
         if not ckpt_path.exists():
             return jsonify({"ok": False, "error": f"Checkpoint not found: {checkpoint}"})
 
-        venv_python = piper_dir / "src" / "python" / ".venv" / "bin" / "python3"
-        onnx_path = output_dir.parent / "my_voice.onnx"
+        # Extract epoch from checkpoint filename
+        m = re.search(r'epoch=(\d+)', ckpt_path.name)
+        epoch = int(m.group(1)) + 1 if m else 0
+
+        # Sanitize profile name
+        safe_name = "".join(c for c in profile_name if c.isalnum() or c in " _-").strip().replace(" ", "_")
+        if not safe_name:
+            safe_name = "my_voice"
+
+        models_dir.mkdir(parents=True, exist_ok=True)
+        onnx_filename = f"{safe_name}.{epoch}.onnx"
+        onnx_path = models_dir / onnx_filename
         config_path = training_dir / "config.json"
+
+        venv_python = piper_dir / "src" / "python" / ".venv" / "bin" / "python3"
 
         try:
             result = subprocess.run(
@@ -725,27 +742,55 @@ def main() -> None:
                 return jsonify({"ok": False, "error": result.stderr[:500]})
 
             # Copy config alongside the model
-            import shutil
             shutil.copy2(str(config_path), str(onnx_path) + ".json")
 
-            return jsonify({"ok": True, "onnx_path": str(onnx_path)})
+            return jsonify({
+                "ok": True,
+                "onnx_path": str(onnx_path),
+                "onnx_name": onnx_filename,
+                "epoch": epoch,
+            })
         except subprocess.TimeoutExpired:
             return jsonify({"ok": False, "error": "Export timed out."})
         except Exception as exc:
             return jsonify({"ok": False, "error": str(exc)})
 
+    @app.route("/api/training/models")
+    async def api_training_models() -> Response:
+        """List exported ONNX models."""
+        model_list = []
+        if models_dir.exists():
+            for f in sorted(models_dir.glob("*.onnx")):
+                model_list.append({
+                    "name": f.name,
+                    "path": str(f),
+                    "size_mb": round(f.stat().st_size / (1024 * 1024)),
+                })
+        return jsonify({"models": model_list})
+
     @app.route("/api/training/test-voice", methods=["POST"])
     async def api_training_test_voice() -> Response:
-        """Generate speech with the exported ONNX model."""
+        """Generate speech with an exported ONNX model."""
         import subprocess
 
         data = await request.get_json()
         text = data.get("text", "").strip()
+        model_name = data.get("model", "")
         if not text:
             return jsonify({"error": "Text is required."}), 400
 
-        onnx_path = output_dir.parent / "my_voice.onnx"
-        if not onnx_path.exists():
+        # Find the model
+        if model_name:
+            onnx_path = models_dir / model_name
+        else:
+            # Fall back to latest model
+            if models_dir.exists():
+                models = sorted(models_dir.glob("*.onnx"), key=lambda p: p.stat().st_mtime)
+                onnx_path = models[-1] if models else None
+            else:
+                onnx_path = None
+
+        if not onnx_path or not onnx_path.exists():
             return jsonify({"error": "No exported model found. Export a checkpoint first."}), 404
 
         test_wav = output_dir.parent / "test_voice.wav"
