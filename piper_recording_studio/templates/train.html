@@ -722,6 +722,10 @@
                     if (data.ok) {
                         q('#trainStatus').innerHTML = '<span class="text-success">Training started!</span>';
                         streamTrainingLog();
+                    } else if (data.error && data.error.includes('already running')) {
+                        q('#trainStatus').innerHTML = `<span class="text-info">${data.error}</span>`;
+                        // Keep running state — don't reset to Start
+                        streamTrainingLog();
                     } else {
                         q('#trainStatus').innerHTML = `<span class="text-danger">${data.error}</span>`;
                         setTraining(false);

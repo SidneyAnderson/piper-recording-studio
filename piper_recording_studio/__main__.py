@@ -563,8 +563,22 @@ def main() -> None:
 
         if ckpt_to_use:
             cmd.extend(["--resume_from_checkpoint", ckpt_to_use])
-            if "high" in Path(ckpt_to_use).name.lower():
-                cmd.extend(["--quality", "high"])
+
+        # Detect quality tier: check if any downloaded checkpoint is high quality,
+        # or if the resume checkpoint was originally trained with high quality
+        is_high = False
+        if checkpoints_dir.exists():
+            is_high = any("high" in f.name.lower() for f in checkpoints_dir.glob("*.ckpt"))
+        if not is_high and ckpt_to_use:
+            # Check file size: high quality checkpoints are ~950MB+, medium ~400MB
+            try:
+                ckpt_size_mb = Path(ckpt_to_use).stat().st_size / (1024 * 1024)
+                if ckpt_size_mb > 800:
+                    is_high = True
+            except Exception:
+                pass
+        if is_high:
+            cmd.extend(["--quality", "high"])
         # train_mode == "scratch" with no checkpoint: no checkpoint flag = from scratch
 
         _LOGGER.info("Starting training: %s", " ".join(cmd))
