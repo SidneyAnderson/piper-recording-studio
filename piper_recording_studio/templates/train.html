@@ -38,6 +38,31 @@
             <div class="row justify-content-center">
                 <div class="col-md-10">
 
+                    <!-- Voice Profile -->
+                    <div class="card mb-4">
+                        <div class="card-body">
+                            <h5 class="card-title">Voice Profile</h5>
+                            <p class="text-muted">Name your voice to save settings and track multiple training runs.</p>
+                            <div class="row">
+                                <div class="col-md-6 mb-2">
+                                    <label for="voiceProfileSelect">Select Profile</label>
+                                    <select class="form-control" id="voiceProfileSelect">
+                                        <option value="">-- Create new --</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-4 mb-2">
+                                    <label for="voiceProfileName">Profile Name</label>
+                                    <input type="text" class="form-control" id="voiceProfileName" placeholder="e.g. British Narrator">
+                                </div>
+                                <div class="col-md-2 mb-2">
+                                    <label>&nbsp;</label>
+                                    <button id="saveProfileBtn" type="button" class="btn btn-primary w-100">Save</button>
+                                </div>
+                            </div>
+                            <div id="profileStatus" class="mt-1" style="font-size: 0.85em;"></div>
+                        </div>
+                    </div>
+
                     <!-- Status -->
                     <div class="card mb-4">
                         <div class="card-body">
@@ -143,7 +168,20 @@
                     <div class="card mb-3 step-card active" id="step5">
                         <div class="card-body">
                             <h5><span class="step-num">5</span> Train</h5>
-                            <p>Fine-tune the checkpoint with your dataset.</p>
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <label for="trainMode">Training Mode</label>
+                                    <select class="form-control" id="trainMode">
+                                        <option value="finetune">Fine-tune from checkpoint</option>
+                                        <option value="scratch">Train from scratch</option>
+                                    </select>
+                                    <div id="trainModeHint" class="mt-1" style="font-size: 0.85em;"></div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label>Dataset</label>
+                                    <div id="trainDatasetInfo" class="form-control-plaintext" style="font-size: 0.9em;">Checking...</div>
+                                </div>
+                            </div>
 
                             <div class="row mb-3">
                                 <div class="col-md-4">
@@ -294,6 +332,91 @@
                 }
             }
 
+            // --- Voice profiles ---
+            async function loadProfiles() {
+                try {
+                    const resp = await fetch('/api/profiles');
+                    const data = await resp.json();
+                    const sel = q('#voiceProfileSelect');
+                    sel.innerHTML = '<option value="">-- Create new --</option>';
+                    (data.profiles || []).forEach(p => {
+                        const opt = document.createElement('option');
+                        opt.value = p.id;
+                        opt.textContent = `${p.name} (${p.language || 'no lang'}, ${p.training_mode || 'finetune'})`;
+                        opt.dataset.profile = JSON.stringify(p);
+                        sel.appendChild(opt);
+                    });
+                } catch(e) { /* ignore */ }
+            }
+
+            q('#voiceProfileSelect').addEventListener('change', function() {
+                const opt = this.options[this.selectedIndex];
+                if (opt.dataset && opt.dataset.profile) {
+                    const p = JSON.parse(opt.dataset.profile);
+                    q('#voiceProfileName').value = p.name || '';
+                    if (p.training_mode) q('#trainMode').value = p.training_mode;
+                    updateTrainMode();
+                } else {
+                    q('#voiceProfileName').value = '';
+                }
+            });
+
+            q('#saveProfileBtn').addEventListener('click', async function() {
+                const name = q('#voiceProfileName').value.trim();
+                const statusEl = q('#profileStatus');
+                if (!name) { statusEl.innerHTML = '<span class="text-danger">Enter a profile name.</span>'; return; }
+
+                const env = await (await fetch('/api/elevenlabs/config')).json();
+                const resp = await fetch('/api/profiles', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name,
+                        voiceId: env.apiKey ? env.voiceId : '',
+                        modelId: env.apiKey ? env.modelId : '',
+                        language: '{{ language }}',
+                        trainingMode: q('#trainMode').value,
+                    }),
+                });
+                const data = await resp.json();
+                if (data.ok) {
+                    statusEl.innerHTML = `<span class="text-success">Profile "${name}" saved.</span>`;
+                    loadProfiles();
+                } else {
+                    statusEl.innerHTML = `<span class="text-danger">${data.error}</span>`;
+                }
+            });
+
+            // --- Training mode auto-detection ---
+            function updateTrainMode() {
+                const mode = q('#trainMode').value;
+                const hint = q('#trainModeHint');
+                if (mode === 'finetune') {
+                    hint.innerHTML = '<span class="text-info">Uses a pre-trained checkpoint. Recommended for datasets under 5,000 samples. Faster convergence (500-1000 epochs).</span>';
+                    q('#maxEpochs').value = 1000;
+                } else {
+                    hint.innerHTML = '<span class="text-info">No checkpoint — learns voice from scratch. Recommended for 10,000+ samples. Needs more epochs (2000+).</span>';
+                    q('#maxEpochs').value = 2000;
+                }
+            }
+            q('#trainMode').addEventListener('change', updateTrainMode);
+
+            function autoDetectTrainMode(sampleCount) {
+                const infoEl = q('#trainDatasetInfo');
+                infoEl.textContent = `${sampleCount.toLocaleString()} samples`;
+
+                if (sampleCount >= 5000) {
+                    q('#trainMode').value = 'scratch';
+                    infoEl.innerHTML += ' <span class="text-success">(sufficient for from-scratch training)</span>';
+                } else if (sampleCount > 0) {
+                    q('#trainMode').value = 'finetune';
+                    infoEl.innerHTML += ' <span class="text-info">(recommended: fine-tune from checkpoint)</span>';
+                } else {
+                    infoEl.innerHTML = '<span class="text-warning">No samples found. Generate audio first.</span>';
+                }
+                updateTrainMode();
+            }
+
             // --- Step 1: Export Dataset ---
             q('#exportDatasetBtn').addEventListener('click', async function() {
                 this.disabled = true;
@@ -371,6 +494,23 @@
                         streamTrainingLog();
                     }
 
+                    // Auto-detect training mode
+                    autoDetectTrainMode(data.generated);
+
+                    // Update step button states based on what's done
+                    if (data.exported > 0) {
+                        q('#exportDatasetBtn').innerHTML = '<i class="fas fa-check"></i> Re-export Dataset';
+                        q('#exportDatasetBtn').classList.replace('btn-primary', 'btn-outline-primary');
+                    }
+                    if (data.piper_installed) {
+                        q('#setupBtn').innerHTML = '<i class="fas fa-check"></i> Setup Complete (Run Again)';
+                        q('#setupBtn').classList.replace('btn-primary', 'btn-outline-primary');
+                    }
+                    if (data.preprocessed) {
+                        q('#preprocessBtn').innerHTML = '<i class="fas fa-check"></i> Re-preprocess Dataset';
+                        q('#preprocessBtn').classList.replace('btn-primary', 'btn-outline-primary');
+                    }
+
                     // Load checkpoints
                     loadCheckpoints();
                 } catch(e) {
@@ -426,7 +566,7 @@
                     const resp = await fetch('/api/training/start', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ batchSize, maxEpochs, checkpointEpochs }),
+                        body: JSON.stringify({ batchSize, maxEpochs, checkpointEpochs, trainMode: q('#trainMode').value }),
                     });
                     const data = await resp.json();
                     if (data.ok) {
@@ -697,6 +837,7 @@
                 q('#downloadCkptBtn').disabled = false;
             });
 
+            loadProfiles();
             loadAvailableCheckpoints();
             checkDataset();
         </script>

@@ -470,6 +470,9 @@ def main() -> None:
 
         training_running = training_process is not None and training_process.returncode is None
 
+        # Check if piper is installed
+        piper_installed = (piper_dir / "src" / "python" / ".venv" / "bin" / "python3").exists()
+
         return jsonify({
             "generated": generated,
             "language": language,
@@ -478,6 +481,7 @@ def main() -> None:
             "preprocessed": preprocessed,
             "checkpoint_exists": checkpoint_exists,
             "training_running": training_running,
+            "piper_installed": piper_installed,
         })
 
     @app.route("/api/training/start", methods=["POST"])
@@ -511,10 +515,11 @@ def main() -> None:
         batch_size = data.get("batchSize", 32)
         max_epochs = data.get("maxEpochs", 1000)
         checkpoint_epochs = data.get("checkpointEpochs", 10)
+        train_mode = data.get("trainMode", "finetune")
 
         venv_python = piper_dir / "src" / "python" / ".venv" / "bin" / "python3"
         if not venv_python.exists():
-            return jsonify({"ok": False, "error": f"Piper venv not found. Run: bash train/setup_training.sh"})
+            return jsonify({"ok": False, "error": f"Piper venv not found. Run Setup in Step 2."})
 
         cmd = [
             str(venv_python), "-m", "piper_train",
@@ -529,10 +534,13 @@ def main() -> None:
             "--precision", "32",
         ]
 
+        # Training mode determines checkpoint usage
         if resume_ckpt:
+            # Always resume from existing training checkpoint (regardless of mode)
             cmd.extend(["--resume_from_checkpoint", resume_ckpt])
-        elif checkpoint_file:
+        elif train_mode == "finetune" and checkpoint_file:
             cmd.extend(["--resume_from_checkpoint", checkpoint_file])
+        # train_mode == "scratch" with no resume_ckpt: no checkpoint flag = from scratch
 
         _LOGGER.info("Starting training: %s", " ".join(cmd))
 
@@ -750,6 +758,55 @@ def main() -> None:
         config.update(updates)
         lines = [f"{k}={v}" for k, v in config.items()]
         env_path.write_text("\n".join(lines) + "\n")
+
+    # --- Voice profiles ---
+    profiles_dir = output_dir.parent / "voice_profiles"
+
+    @app.route("/api/profiles", methods=["GET"])
+    async def api_profiles_list() -> Response:
+        """List saved voice profiles."""
+        profiles = []
+        if profiles_dir.exists():
+            for f in sorted(profiles_dir.glob("*.json")):
+                try:
+                    data = json.loads(f.read_text())
+                    data["id"] = f.stem
+                    profiles.append(data)
+                except Exception:
+                    pass
+        return jsonify({"profiles": profiles})
+
+    @app.route("/api/profiles", methods=["POST"])
+    async def api_profiles_save() -> Response:
+        """Save or update a voice profile."""
+        data = await request.get_json()
+        name = data.get("name", "").strip()
+        if not name:
+            return jsonify({"ok": False, "error": "Profile name is required."})
+
+        profiles_dir.mkdir(parents=True, exist_ok=True)
+
+        # Use name as filename (sanitized)
+        safe_name = "".join(c for c in name if c.isalnum() or c in " _-").strip().replace(" ", "_")
+        profile_path = profiles_dir / f"{safe_name}.json"
+
+        profile = {
+            "name": name,
+            "voice_id": data.get("voiceId", ""),
+            "model_id": data.get("modelId", ""),
+            "language": data.get("language", ""),
+            "training_mode": data.get("trainingMode", "finetune"),
+        }
+        profile_path.write_text(json.dumps(profile, indent=2))
+        return jsonify({"ok": True, "id": safe_name})
+
+    @app.route("/api/profiles/<profile_id>", methods=["DELETE"])
+    async def api_profiles_delete(profile_id: str) -> Response:
+        """Delete a voice profile."""
+        profile_path = profiles_dir / f"{profile_id}.json"
+        if profile_path.exists():
+            profile_path.unlink()
+        return jsonify({"ok": True})
 
     @app.route("/api/elevenlabs/config", methods=["GET"])
     async def api_elevenlabs_config() -> Response:

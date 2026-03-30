@@ -65,25 +65,38 @@
                                         {% endfor %}
                                     </select>
                                 </div>
+                                <div class="form-group mb-3">
+                                    <label for="trainingMode">Training Approach</label>
+                                    <select class="form-control" id="trainingMode">
+                                        <option value="finetune">Fine-tune from checkpoint (~1,150 samples)</option>
+                                        <option value="scratch">Train from scratch (~12,000 samples)</option>
+                                    </select>
+                                    <div id="modeHint" class="mt-1" style="font-size: 0.85em;"></div>
+                                </div>
+
                                 <div class="form-row mb-3 row">
                                     <div class="col-md-4 mb-2">
                                         <label for="stability">Stability</label>
                                         <input type="number" class="form-control" id="stability" value="0.5" min="0" max="1" step="0.05">
+                                        <small class="text-muted">0.50 for preview, 0.80 for training data</small>
                                     </div>
                                     <div class="col-md-4 mb-2">
                                         <label for="similarityBoost">Similarity Boost</label>
                                         <input type="number" class="form-control" id="similarityBoost" value="0.75" min="0" max="1" step="0.05">
+                                        <small class="text-muted">0.75 for preview, 0.85 for training data</small>
                                     </div>
                                     <div class="col-md-4 mb-2">
                                         <label for="sampleRate">Sample Rate</label>
                                         <select class="form-control" id="sampleRate">
-                                            <option value="16000">16000</option>
-                                            <option value="22050">22050</option>
-                                            <option value="24000" selected>24000</option>
-                                            <option value="44100" id="sr44100">44100 (Pro+ only)</option>
+                                            <option value="16000">16000 Hz</option>
+                                            <option value="22050">22050 Hz</option>
+                                            <option value="24000" selected>24000 Hz (recommended)</option>
                                         </select>
+                                        <small class="text-muted">24000 Hz is optimal for Piper training</small>
                                     </div>
                                 </div>
+
+                                <div id="settingsAlert" class="alert alert-info" style="font-size: 0.85em; display: none;"></div>
 
                                 <button id="startBtn" type="button" class="btn btn-success btn-lg btn-block w-100">
                                     <i class="fas fa-play"></i> Start Generation
@@ -155,6 +168,26 @@
             let abortController = null;
             let allModels = [];
             let savedModelId = '';
+
+            // --- Training mode selector ---
+            function updateTrainingMode() {
+                const mode = q('#trainingMode').value;
+                const hint = q('#modeHint');
+                const alert = q('#settingsAlert');
+
+                if (mode === 'finetune') {
+                    hint.innerHTML = '<span class="text-info">Generates ~1,150 samples. Fine-tunes from a pre-trained checkpoint for good quality with less data and faster training.</span>';
+                    alert.style.display = '';
+                    alert.innerHTML = '<strong>Recommended settings for fine-tune dataset:</strong> Default stability (0.50) and similarity boost (0.75) are fine for this smaller dataset. Focus on getting natural-sounding audio.';
+                } else {
+                    hint.innerHTML = '<span class="text-info">Generates ~12,000 samples. Trains a model from scratch for maximum voice fidelity. Requires more ElevenLabs credits and longer training.</span>';
+                    alert.style.display = '';
+                    alert.innerHTML = '<strong>Recommended settings for full dataset:</strong> Increase <strong>Stability to 0.80</strong> and <strong>Similarity Boost to 0.85</strong> for maximum consistency across 12,000 samples. Use the "Apply" button below.';
+                    alert.innerHTML += '<br><button type="button" class="btn btn-sm btn-outline-primary mt-2" onclick="q(\'#stability\').value=0.80; q(\'#similarityBoost\').value=0.85;">Apply Recommended Settings</button>';
+                }
+            }
+            q('#trainingMode').addEventListener('change', updateTrainingMode);
+            updateTrainingMode();
 
             function populateModelDropdown(models, compatibleIds, selectModelId) {
                 const sel = q('#modelId');
@@ -323,13 +356,6 @@
                         const used = data.character_count.toLocaleString();
                         const limit = data.character_limit.toLocaleString();
                         resultEl.innerHTML = `<span class="text-success">&#10003; Valid key — Tier: ${data.tier}, Characters: ${used} / ${limit}</span>`;
-                        // Disable 44100 for non-Pro tiers
-                        const proTiers = ['pro', 'scale', 'enterprise'];
-                        const isPro = proTiers.includes(data.tier.toLowerCase());
-                        q('#sr44100').disabled = !isPro;
-                        if (!isPro && q('#sampleRate').value === '44100') {
-                            q('#sampleRate').value = '24000';
-                        }
                         // Fetch models after successful key test
                         await fetchModels(apiKey);
                         // Auto-lookup voice if voice ID is filled

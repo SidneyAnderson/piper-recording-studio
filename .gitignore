@@ -25,6 +25,9 @@ lightning_logs/
 *.onnx
 *.onnx.json
 
+# Voice profiles (contain user-specific config)
+/voice_profiles/
+
 # Runtime files
 training.log
 test_voice.wav
