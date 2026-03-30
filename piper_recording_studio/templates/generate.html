@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+        <meta name="description" content="Generate TTS audio via ElevenLabs">
+        <link href="css/bootstrap.min.css" rel="stylesheet">
+        <link href="css/fontawesome-all.min.css" rel="stylesheet">
+        <style>
+            #log { max-height: 400px; overflow-y: auto; font-family: monospace; font-size: 0.85em; }
+            #log .error { color: #dc3545; }
+            #log .success { color: #28a745; }
+            #log .info { color: #6c757d; }
+        </style>
+    </head>
+    <body>
+        <header>
+            <nav class="navbar navbar-expand-md bg-light">
+                <div class="m-auto text-center">
+                    <img id="logo" src="img/logo.png" alt="Piper logo" style="height: 4em;" />
+                    <h2 class="font-weight-bold">
+                        Recording Studio — ElevenLabs Generator
+                    </h2>
+                </div>
+            </nav>
+        </header>
+        <div class="container mt-4">
+            <div class="row justify-content-center">
+                <div class="col-md-8">
+                    <div class="card">
+                        <div class="card-body">
+                            <h5 class="card-title">Generate TTS Audio</h5>
+                            <p class="text-muted">Send prompts to ElevenLabs and save the returned audio.</p>
+
+                            <form id="configForm">
+                                <div class="form-group mb-3">
+                                    <label for="apiKey">API Key</label>
+                                    <input type="password" class="form-control" id="apiKey" placeholder="ElevenLabs API key" required>
+                                </div>
+                                <div class="form-row mb-3 row">
+                                    <div class="col-md-6 mb-3">
+                                        <label for="voiceId">Voice ID</label>
+                                        <input type="text" class="form-control" id="voiceId" placeholder="Voice ID" required>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label for="modelId">Model ID</label>
+                                        <input type="text" class="form-control" id="modelId" value="eleven_monolingual_v1" required>
+                                    </div>
+                                </div>
+                                <div class="form-group mb-3">
+                                    <label for="genLanguage">Language</label>
+                                    <select class="form-control" id="genLanguage" required>
+                                        <option value="" selected>Choose a language</option>
+                                        {% for name, code in languages: %}
+                                        <option value="{{ code }}">{{ name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="form-row mb-3 row">
+                                    <div class="col-md-4 mb-2">
+                                        <label for="stability">Stability</label>
+                                        <input type="number" class="form-control" id="stability" value="0.5" min="0" max="1" step="0.05">
+                                    </div>
+                                    <div class="col-md-4 mb-2">
+                                        <label for="similarityBoost">Similarity Boost</label>
+                                        <input type="number" class="form-control" id="similarityBoost" value="0.75" min="0" max="1" step="0.05">
+                                    </div>
+                                    <div class="col-md-4 mb-2">
+                                        <label for="sampleRate">Sample Rate</label>
+                                        <select class="form-control" id="sampleRate">
+                                            <option value="16000">16000</option>
+                                            <option value="22050">22050</option>
+                                            <option value="24000" selected>24000</option>
+                                            <option value="44100">44100</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <button id="startBtn" type="button" class="btn btn-success btn-lg btn-block w-100">
+                                    <i class="fas fa-play"></i> Start Generation
+                                </button>
+                                <button id="stopBtn" type="button" class="btn btn-danger btn-lg btn-block w-100 mt-2" style="display:none;">
+                                    <i class="fas fa-stop"></i> Stop
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- Progress -->
+                    <div class="card mt-3" id="progressCard" style="display:none;">
+                        <div class="card-body">
+                            <h5 class="card-title">Progress</h5>
+                            <div class="progress mb-2" style="height: 25px;">
+                                <div id="progressBar" class="progress-bar bg-success" role="progressbar"
+                                     style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                                    0%
+                                </div>
+                            </div>
+                            <div class="d-flex justify-content-between">
+                                <span id="statsGenerated" class="text-success">Generated: 0</span>
+                                <span id="statsFailed" class="text-danger">Failed: 0</span>
+                                <span id="statsRemaining" class="text-muted">Remaining: 0</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Log -->
+                    <div class="card mt-3">
+                        <div class="card-body">
+                            <h5 class="card-title">Log</h5>
+                            <div id="log" class="border rounded p-2 bg-light"></div>
+                        </div>
+                    </div>
+
+                    <div class="mt-3 mb-5 text-center">
+                        <a href="/" class="btn btn-outline-secondary">
+                            <i class="fas fa-arrow-left"></i> Back to Home
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script>
+            const q = (sel) => document.querySelector(sel);
+            let abortController = null;
+
+            function log(msg, cls = 'info') {
+                const el = q('#log');
+                const line = document.createElement('div');
+                line.className = cls;
+                line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+                el.appendChild(line);
+                el.scrollTop = el.scrollHeight;
+            }
+
+            function updateProgress(generated, failed, total) {
+                const done = generated + failed;
+                const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+                q('#progressBar').style.width = pct + '%';
+                q('#progressBar').textContent = pct + '%';
+                q('#statsGenerated').textContent = 'Generated: ' + generated;
+                q('#statsFailed').textContent = 'Failed: ' + failed;
+                q('#statsRemaining').textContent = 'Remaining: ' + (total - done);
+            }
+
+            function setRunning(running) {
+                q('#startBtn').style.display = running ? 'none' : '';
+                q('#stopBtn').style.display = running ? '' : 'none';
+                q('#progressCard').style.display = running || q('#progressBar').style.width !== '0%' ? '' : 'none';
+                document.querySelectorAll('#configForm input, #configForm select').forEach(el => {
+                    if (el.id !== 'stopBtn') el.disabled = running;
+                });
+            }
+
+            q('#stopBtn').addEventListener('click', function() {
+                if (abortController) {
+                    abortController.abort();
+                    log('Stopping...', 'error');
+                }
+            });
+
+            q('#startBtn').addEventListener('click', async function() {
+                const apiKey = q('#apiKey').value.trim();
+                const voiceId = q('#voiceId').value.trim();
+                const modelId = q('#modelId').value.trim();
+                const language = q('#genLanguage').value;
+                const stability = parseFloat(q('#stability').value);
+                const similarityBoost = parseFloat(q('#similarityBoost').value);
+                const sampleRate = parseInt(q('#sampleRate').value);
+
+                if (!apiKey || !voiceId || !modelId || !language) {
+                    alert('Please fill in all required fields.');
+                    return;
+                }
+
+                abortController = new AbortController();
+                setRunning(true);
+                log('Starting generation for language: ' + language);
+
+                try {
+                    const response = await fetch('/api/elevenlabs/generate', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            apiKey, voiceId, modelId, language,
+                            stability, similarityBoost, sampleRate,
+                        }),
+                        signal: abortController.signal,
+                    });
+
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder();
+                    let buffer = '';
+
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+
+                        buffer += decoder.decode(value, { stream: true });
+                        const lines = buffer.split('\n');
+                        buffer = lines.pop();
+
+                        for (const line of lines) {
+                            if (!line.startsWith('data: ')) continue;
+                            const data = JSON.parse(line.slice(6));
+
+                            if (data.type === 'progress') {
+                                updateProgress(data.generated, data.failed, data.total);
+                                const cls = data.status === 'error' ? 'error' : 'success';
+                                log(data.message, cls);
+                            } else if (data.type === 'done') {
+                                updateProgress(data.generated, data.failed, data.total);
+                                log('Generation complete!', 'success');
+                            } else if (data.type === 'error') {
+                                log('Error: ' + data.message, 'error');
+                            }
+                        }
+                    }
+                } catch (err) {
+                    if (err.name === 'AbortError') {
+                        log('Generation stopped by user.', 'error');
+                    } else {
+                        log('Error: ' + err.message, 'error');
+                    }
+                } finally {
+                    setRunning(false);
+                    abortController = null;
+                }
+            });
+        </script>
+    </body>
+</html>

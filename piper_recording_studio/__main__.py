@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import csv
+import json
 import logging
 from collections import defaultdict
 from dataclasses import dataclass
@@ -8,6 +9,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 from uuid import uuid4
 
+import httpx
 import hypercorn
 from quart import (
     Quart,
@@ -17,6 +19,8 @@ from quart import (
     request,
     send_from_directory,
 )
+
+from elevenlabs_generate.client import ElevenLabsConfig, synthesize
 
 _LOGGER = logging.getLogger(__name__)
 _DIR = Path(__file__).parent
@@ -264,6 +268,91 @@ def main() -> None:
     async def webfonts(filename) -> Response:
         """Webfonts static endpoint."""
         return await send_from_directory(webfonts_dir, filename)
+
+    # --- ElevenLabs generation routes ---
+
+    @app.route("/generate")
+    async def api_generate() -> str:
+        """ElevenLabs TTS generation page"""
+        return await render_template(
+            "generate.html",
+            languages=sorted(languages.items()),
+        )
+
+    @app.route("/api/elevenlabs/generate", methods=["POST"])
+    async def api_elevenlabs_generate() -> Response:
+        """Stream SSE progress while generating TTS audio via ElevenLabs."""
+        data = await request.get_json()
+        language = data["language"]
+        config = ElevenLabsConfig(
+            api_key=data["apiKey"],
+            voice_id=data["voiceId"],
+            model_id=data["modelId"],
+            sample_rate=int(data.get("sampleRate", 24000)),
+            stability=float(data.get("stability", 0.5)),
+            similarity_boost=float(data.get("similarityBoost", 0.75)),
+        )
+
+        language_prompts = prompts.get(language, [])
+        if not language_prompts:
+            return Response(
+                f"data: {json.dumps({'type': 'error', 'message': f'No prompts for language: {language}'})}\n\n",
+                content_type="text/event-stream",
+            )
+
+        async def generate_stream():
+            audio_dir = output_dir
+            incomplete = []
+            for prompt in language_prompts:
+                text_path = audio_dir / language / prompt.group / f"{prompt.id}.txt"
+                if not text_path.exists():
+                    incomplete.append(prompt)
+
+            total = len(language_prompts)
+            already_done = total - len(incomplete)
+            generated = 0
+            failed = 0
+
+            if not incomplete:
+                yield f"data: {json.dumps({'type': 'done', 'generated': 0, 'failed': 0, 'total': total, 'message': 'All prompts already completed.'})}\n\n"
+                return
+
+            async with httpx.AsyncClient() as client:
+                for i, prompt in enumerate(incomplete):
+                    current = already_done + generated + failed + 1
+                    try:
+                        wav_bytes = await synthesize(client, config, prompt.text)
+                        audio_path = audio_dir / language / prompt.group / f"{prompt.id}.wav"
+                        audio_path.parent.mkdir(parents=True, exist_ok=True)
+                        audio_path.write_bytes(wav_bytes)
+
+                        text_path = audio_path.parent / f"{prompt.id}.txt"
+                        text_path.write_text(prompt.text, encoding="utf-8")
+
+                        generated += 1
+                        msg = f"[{current}/{total}] Saved {prompt.id}.wav ({len(wav_bytes)} bytes)"
+                        yield f"data: {json.dumps({'type': 'progress', 'status': 'ok', 'message': msg, 'generated': already_done + generated, 'failed': failed, 'total': total})}\n\n"
+                    except httpx.HTTPStatusError as exc:
+                        failed += 1
+                        msg = f"[{current}/{total}] API error for {prompt.id}: {exc.response.status_code}"
+                        yield f"data: {json.dumps({'type': 'progress', 'status': 'error', 'message': msg, 'generated': already_done + generated, 'failed': failed, 'total': total})}\n\n"
+                        if exc.response.status_code == 401:
+                            yield f"data: {json.dumps({'type': 'error', 'message': 'Invalid API key. Aborting.'})}\n\n"
+                            return
+                        if exc.response.status_code == 429:
+                            yield f"data: {json.dumps({'type': 'progress', 'status': 'error', 'message': 'Rate limited. Waiting 30s...', 'generated': already_done + generated, 'failed': failed, 'total': total})}\n\n"
+                            await asyncio.sleep(30)
+                    except Exception as exc:
+                        failed += 1
+                        msg = f"[{current}/{total}] Error for {prompt.id}: {exc}"
+                        yield f"data: {json.dumps({'type': 'progress', 'status': 'error', 'message': msg, 'generated': already_done + generated, 'failed': failed, 'total': total})}\n\n"
+
+                    if i < len(incomplete) - 1:
+                        await asyncio.sleep(0.5)
+
+            yield f"data: {json.dumps({'type': 'done', 'generated': already_done + generated, 'failed': failed, 'total': total})}\n\n"
+
+        return Response(generate_stream(), content_type="text/event-stream")
 
     # Run web server
     hyp_config = hypercorn.config.Config()
