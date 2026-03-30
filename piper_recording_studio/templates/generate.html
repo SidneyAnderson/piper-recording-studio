@@ -92,6 +92,26 @@
                         </div>
                     </div>
 
+                    <!-- Preview -->
+                    <div class="card mt-3">
+                        <div class="card-body">
+                            <h5 class="card-title">Preview Voice</h5>
+                            <p class="text-muted">Test your settings with custom text before starting a full generation.</p>
+                            <div class="form-group mb-3">
+                                <textarea id="previewText" class="form-control" rows="2" placeholder="Type or paste text to preview...">The quick brown fox jumps over the lazy dog.</textarea>
+                            </div>
+                            <div class="d-flex align-items-center gap-2">
+                                <button id="previewBtn" type="button" class="btn btn-outline-primary">
+                                    <i class="fas fa-headphones"></i> Generate Preview
+                                </button>
+                                <span id="previewStatus" class="ms-2" style="font-size: 0.85em;"></span>
+                            </div>
+                            <div id="previewPlayer" class="mt-3" style="display:none;">
+                                <audio id="previewAudio" controls class="w-100"></audio>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Progress -->
                     <div class="card mt-3" id="progressCard" style="display:none;">
                         <div class="card-body">
@@ -141,6 +161,60 @@
                     if (data.modelId) q('#modelId').value = data.modelId;
                 } catch (e) { /* ignore */ }
             })();
+
+            q('#previewBtn').addEventListener('click', async function() {
+                const apiKey = q('#apiKey').value.trim();
+                const voiceId = q('#voiceId').value.trim();
+                const modelId = q('#modelId').value.trim();
+                const text = q('#previewText').value.trim();
+                const statusEl = q('#previewStatus');
+
+                if (!apiKey || !voiceId || !modelId) {
+                    statusEl.innerHTML = '<span class="text-danger">Fill in API Key, Voice ID, and Model ID first.</span>';
+                    return;
+                }
+                if (!text) {
+                    statusEl.innerHTML = '<span class="text-danger">Enter some text to preview.</span>';
+                    return;
+                }
+
+                statusEl.innerHTML = '<span class="text-muted">Generating preview...</span>';
+                q('#previewBtn').disabled = true;
+                q('#previewPlayer').style.display = 'none';
+
+                try {
+                    const resp = await fetch('/api/elevenlabs/preview', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            apiKey, voiceId, modelId, text,
+                            stability: parseFloat(q('#stability').value),
+                            similarityBoost: parseFloat(q('#similarityBoost').value),
+                            sampleRate: parseInt(q('#sampleRate').value),
+                        }),
+                    });
+
+                    if (!resp.ok) {
+                        const errText = await resp.text();
+                        let msg;
+                        try { msg = JSON.parse(errText).error; } catch(e) { msg = errText.slice(0, 200); }
+                        statusEl.innerHTML = `<span class="text-danger">${msg}</span>`;
+                        return;
+                    }
+
+                    const blob = await resp.blob();
+                    const url = URL.createObjectURL(blob);
+                    const audio = q('#previewAudio');
+                    audio.src = url;
+                    q('#previewPlayer').style.display = '';
+                    audio.play();
+                    statusEl.innerHTML = '<span class="text-success">Preview ready. Adjust settings and preview again if needed.</span>';
+                } catch (err) {
+                    statusEl.innerHTML = `<span class="text-danger">Error: ${err.message}</span>`;
+                } finally {
+                    q('#previewBtn').disabled = false;
+                }
+            });
 
             q('#testKeyBtn').addEventListener('click', async function() {
                 const apiKey = q('#apiKey').value.trim();

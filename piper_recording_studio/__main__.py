@@ -336,6 +336,36 @@ def main() -> None:
         except Exception as exc:
             return jsonify({"ok": False, "error": str(exc)}), 500
 
+    @app.route("/api/elevenlabs/preview", methods=["POST"])
+    async def api_elevenlabs_preview() -> Response:
+        """Generate a single TTS preview and return WAV audio."""
+        data = await request.get_json()
+        text = data.get("text", "").strip()
+        if not text:
+            return jsonify({"error": "Text is required."}), 400
+
+        config = ElevenLabsConfig(
+            api_key=data["apiKey"],
+            voice_id=data["voiceId"],
+            model_id=data["modelId"],
+            sample_rate=int(data.get("sampleRate", 24000)),
+            stability=float(data.get("stability", 0.5)),
+            similarity_boost=float(data.get("similarityBoost", 0.75)),
+        )
+        try:
+            async with httpx.AsyncClient() as client:
+                wav_bytes = await synthesize(client, config, text)
+            return Response(wav_bytes, content_type="audio/wav")
+        except httpx.HTTPStatusError as exc:
+            try:
+                detail = exc.response.json().get("detail", {})
+                msg = detail.get("message", exc.response.text[:200]) if isinstance(detail, dict) else str(detail)[:200]
+            except Exception:
+                msg = exc.response.text[:200]
+            return jsonify({"error": f"{exc.response.status_code}: {msg}"}), 502
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
     @app.route("/api/elevenlabs/generate", methods=["POST"])
     async def api_elevenlabs_generate() -> Response:
         """Stream SSE progress while generating TTS audio via ElevenLabs."""
