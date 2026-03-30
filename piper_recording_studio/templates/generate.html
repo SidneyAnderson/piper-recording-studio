@@ -373,11 +373,55 @@
             }
 
             q('#stopBtn').addEventListener('click', function() {
+                userStopped = true;
                 if (abortController) {
                     abortController.abort();
                     log('Stopping...', 'error');
                 }
             });
+
+            let userStopped = false;
+
+            async function runGeneration(params) {
+                const response = await fetch('/api/elevenlabs/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(params),
+                    signal: abortController.signal,
+                });
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                let lastType = null;
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop();
+
+                    for (const line of lines) {
+                        if (!line.startsWith('data: ')) continue;
+                        const data = JSON.parse(line.slice(6));
+                        lastType = data.type;
+
+                        if (data.type === 'progress') {
+                            updateProgress(data.generated, data.failed, data.total);
+                            const cls = data.status === 'error' ? 'error' : 'success';
+                            log(data.message, cls);
+                        } else if (data.type === 'done') {
+                            updateProgress(data.generated, data.failed, data.total);
+                            log('Generation complete!', 'success');
+                        } else if (data.type === 'error') {
+                            log('Error: ' + data.message, 'error');
+                        }
+                    }
+                }
+                return lastType;
+            }
 
             q('#startBtn').addEventListener('click', async function() {
                 const apiKey = q('#apiKey').value.trim();
@@ -393,59 +437,44 @@
                     return;
                 }
 
+                const params = { apiKey, voiceId, modelId, language, stability, similarityBoost, sampleRate };
+                const maxReconnects = 5;
+                let reconnectCount = 0;
+                userStopped = false;
+
                 abortController = new AbortController();
                 setRunning(true);
                 log('Starting generation for language: ' + language);
 
-                try {
-                    const response = await fetch('/api/elevenlabs/generate', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            apiKey, voiceId, modelId, language,
-                            stability, similarityBoost, sampleRate,
-                        }),
-                        signal: abortController.signal,
-                    });
-
-                    const reader = response.body.getReader();
-                    const decoder = new TextDecoder();
-                    let buffer = '';
-
-                    while (true) {
-                        const { done, value } = await reader.read();
-                        if (done) break;
-
-                        buffer += decoder.decode(value, { stream: true });
-                        const lines = buffer.split('\n');
-                        buffer = lines.pop();
-
-                        for (const line of lines) {
-                            if (!line.startsWith('data: ')) continue;
-                            const data = JSON.parse(line.slice(6));
-
-                            if (data.type === 'progress') {
-                                updateProgress(data.generated, data.failed, data.total);
-                                const cls = data.status === 'error' ? 'error' : 'success';
-                                log(data.message, cls);
-                            } else if (data.type === 'done') {
-                                updateProgress(data.generated, data.failed, data.total);
-                                log('Generation complete!', 'success');
-                            } else if (data.type === 'error') {
-                                log('Error: ' + data.message, 'error');
-                            }
+                while (reconnectCount <= maxReconnects) {
+                    try {
+                        const lastType = await runGeneration(params);
+                        // Normal completion or fatal error — stop
+                        break;
+                    } catch (err) {
+                        if (err.name === 'AbortError' || userStopped) {
+                            log('Generation stopped by user.', 'error');
+                            break;
                         }
+                        reconnectCount++;
+                        if (reconnectCount > maxReconnects) {
+                            log(`Connection lost after ${maxReconnects} reconnect attempts. Click Start to resume.`, 'error');
+                            break;
+                        }
+                        const wait = Math.min(5 * reconnectCount, 30);
+                        log(`Connection lost. Auto-reconnecting in ${wait}s... (attempt ${reconnectCount}/${maxReconnects})`, 'error');
+                        await new Promise(r => setTimeout(r, wait * 1000));
+                        if (userStopped) {
+                            log('Generation stopped by user.', 'error');
+                            break;
+                        }
+                        log('Reconnecting and resuming...', 'info');
+                        abortController = new AbortController();
                     }
-                } catch (err) {
-                    if (err.name === 'AbortError') {
-                        log('Generation stopped by user.', 'error');
-                    } else {
-                        log('Error: ' + err.message, 'error');
-                    }
-                } finally {
-                    setRunning(false);
-                    abortController = null;
                 }
+
+                setRunning(false);
+                abortController = null;
             });
         </script>
     </body>

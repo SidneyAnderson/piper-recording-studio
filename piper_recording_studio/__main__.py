@@ -437,45 +437,61 @@ def main() -> None:
                 yield f"data: {json.dumps({'type': 'done', 'generated': 0, 'failed': 0, 'total': total, 'message': 'All prompts already completed.'})}\n\n"
                 return
 
+            max_retries = 3
             async with httpx.AsyncClient() as client:
                 for i, prompt in enumerate(incomplete):
                     current = already_done + generated + failed + 1
-                    try:
-                        wav_bytes = await synthesize(client, config, prompt.text)
-                        audio_path = audio_dir / language / prompt.group / f"{prompt.id}.wav"
-                        audio_path.parent.mkdir(parents=True, exist_ok=True)
-                        audio_path.write_bytes(wav_bytes)
+                    success = False
 
-                        text_path = audio_path.parent / f"{prompt.id}.txt"
-                        text_path.write_text(prompt.text, encoding="utf-8")
-
-                        generated += 1
-                        msg = f"[{current}/{total}] Saved {prompt.id}.wav ({len(wav_bytes)} bytes)"
-                        yield f"data: {json.dumps({'type': 'progress', 'status': 'ok', 'message': msg, 'generated': already_done + generated, 'failed': failed, 'total': total})}\n\n"
-                    except httpx.HTTPStatusError as exc:
-                        failed += 1
+                    for attempt in range(1, max_retries + 1):
                         try:
-                            detail = exc.response.json().get("detail", {})
-                            error_detail = detail.get("message", exc.response.text[:200]) if isinstance(detail, dict) else str(detail)[:200]
-                        except Exception:
-                            error_detail = exc.response.text[:200]
-                        msg = f"[{current}/{total}] API error for {prompt.id}: {exc.response.status_code} — {error_detail}"
-                        yield f"data: {json.dumps({'type': 'progress', 'status': 'error', 'message': msg, 'generated': already_done + generated, 'failed': failed, 'total': total})}\n\n"
-                        if exc.response.status_code == 400:
-                            yield f"data: {json.dumps({'type': 'error', 'message': f'Bad request. Check voice ID, model ID, and settings. Detail: {error_detail}'})}\n\n"
-                            return
-                        if exc.response.status_code == 401:
-                            yield f"data: {json.dumps({'type': 'error', 'message': 'Invalid API key. Aborting.'})}\n\n"
-                            return
-                        if exc.response.status_code == 403:
-                            yield f"data: {json.dumps({'type': 'error', 'message': f'Forbidden. {error_detail} Aborting.'})}\n\n"
-                            return
-                        if exc.response.status_code == 429:
-                            yield f"data: {json.dumps({'type': 'progress', 'status': 'error', 'message': 'Rate limited. Waiting 30s...', 'generated': already_done + generated, 'failed': failed, 'total': total})}\n\n"
-                            await asyncio.sleep(30)
-                    except Exception as exc:
+                            wav_bytes = await synthesize(client, config, prompt.text)
+                            audio_path = audio_dir / language / prompt.group / f"{prompt.id}.wav"
+                            audio_path.parent.mkdir(parents=True, exist_ok=True)
+                            audio_path.write_bytes(wav_bytes)
+
+                            text_path = audio_path.parent / f"{prompt.id}.txt"
+                            text_path.write_text(prompt.text, encoding="utf-8")
+
+                            generated += 1
+                            msg = f"[{current}/{total}] Saved {prompt.id}.wav ({len(wav_bytes)} bytes)"
+                            yield f"data: {json.dumps({'type': 'progress', 'status': 'ok', 'message': msg, 'generated': already_done + generated, 'failed': failed, 'total': total})}\n\n"
+                            success = True
+                            break
+                        except httpx.HTTPStatusError as exc:
+                            try:
+                                detail = exc.response.json().get("detail", {})
+                                error_detail = detail.get("message", exc.response.text[:200]) if isinstance(detail, dict) else str(detail)[:200]
+                            except Exception:
+                                error_detail = exc.response.text[:200]
+                            # Fatal errors — abort immediately
+                            if exc.response.status_code in (400, 401, 403):
+                                failed += 1
+                                msg = f"[{current}/{total}] API error for {prompt.id}: {exc.response.status_code} — {error_detail}"
+                                yield f"data: {json.dumps({'type': 'progress', 'status': 'error', 'message': msg, 'generated': already_done + generated, 'failed': failed, 'total': total})}\n\n"
+                                yield f"data: {json.dumps({'type': 'error', 'message': f'Fatal error ({exc.response.status_code}): {error_detail} Aborting.'})}\n\n"
+                                return
+                            if exc.response.status_code == 429:
+                                wait = 30
+                                msg = f"[{current}/{total}] Rate limited. Waiting {wait}s... (attempt {attempt}/{max_retries})"
+                                yield f"data: {json.dumps({'type': 'progress', 'status': 'error', 'message': msg, 'generated': already_done + generated, 'failed': failed, 'total': total})}\n\n"
+                                await asyncio.sleep(wait)
+                                continue
+                            # Other HTTP errors — retry with backoff
+                            wait = 5 * attempt
+                            msg = f"[{current}/{total}] API error for {prompt.id}: {exc.response.status_code} — retrying in {wait}s (attempt {attempt}/{max_retries})"
+                            yield f"data: {json.dumps({'type': 'progress', 'status': 'error', 'message': msg, 'generated': already_done + generated, 'failed': failed, 'total': total})}\n\n"
+                            await asyncio.sleep(wait)
+                        except Exception as exc:
+                            # Network errors, timeouts — retry with backoff
+                            wait = 5 * attempt
+                            msg = f"[{current}/{total}] {type(exc).__name__} for {prompt.id} — retrying in {wait}s (attempt {attempt}/{max_retries})"
+                            yield f"data: {json.dumps({'type': 'progress', 'status': 'error', 'message': msg, 'generated': already_done + generated, 'failed': failed, 'total': total})}\n\n"
+                            await asyncio.sleep(wait)
+
+                    if not success:
                         failed += 1
-                        msg = f"[{current}/{total}] Error for {prompt.id}: {exc}"
+                        msg = f"[{current}/{total}] Failed {prompt.id} after {max_retries} attempts — skipping"
                         yield f"data: {json.dumps({'type': 'progress', 'status': 'error', 'message': msg, 'generated': already_done + generated, 'failed': failed, 'total': total})}\n\n"
 
                     if i < len(incomplete) - 1:
