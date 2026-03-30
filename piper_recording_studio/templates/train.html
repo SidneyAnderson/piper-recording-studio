@@ -791,9 +791,10 @@
                     const maxEpochs = parseInt(q('#maxEpochs').value) || 1000;
                     const startEpoch = data.start_epoch || 0;
                     const currentEpoch = data.estimated_epoch || data.latest_epoch;
+                    let done = 0;
 
                     if (currentEpoch !== null) {
-                        const done = Math.max(0, currentEpoch - startEpoch + 1);
+                        done = Math.max(0, currentEpoch - startEpoch + 1);
                         const pct = Math.min(100, Math.max(0, Math.round((done / maxEpochs) * 100)));
                         q('#trainProgressBar').style.width = pct + '%';
                         q('#trainProgressBar').textContent = pct + '%';
@@ -819,7 +820,7 @@
 
                         // Estimate time remaining
                         let etaStr = '';
-                        if (currentEpoch !== null && done > 5) {
+                        if (done > 5) {
                             const secsPerEpoch = elapsed / done;
                             const remaining = Math.max(0, maxEpochs - done);
                             const etaSecs = Math.round(remaining * secsPerEpoch);
