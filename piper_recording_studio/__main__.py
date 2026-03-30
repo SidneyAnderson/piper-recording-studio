@@ -632,14 +632,66 @@ def main() -> None:
 
         return Response(stream_log(), content_type="text/plain")
 
+    @app.route("/api/training/progress")
+    async def api_training_progress() -> Response:
+        """Return current training progress by scanning checkpoints."""
+        import re
+        nonlocal training_process
+
+        running = training_process is not None and training_process.returncode is None
+
+        # Find latest checkpoint to determine current epoch
+        lightning_dir = training_dir / "lightning_logs"
+        latest_epoch = None
+        start_epoch = None
+        total_checkpoints = 0
+
+        if lightning_dir.exists():
+            ckpts = sorted(lightning_dir.rglob("*.ckpt"), key=lambda p: p.stat().st_mtime)
+            total_checkpoints = len(ckpts)
+            for ckpt in ckpts:
+                m = re.search(r'epoch=(\d+)', ckpt.name)
+                if m:
+                    epoch = int(m.group(1))
+                    if start_epoch is None:
+                        start_epoch = epoch
+                    latest_epoch = epoch
+
+        # Read last few lines of log for recent activity
+        last_log_lines = []
+        if training_log_path.exists():
+            try:
+                with open(training_log_path, "r") as f:
+                    lines = f.readlines()
+                    last_log_lines = [l.rstrip() for l in lines[-5:] if l.strip()]
+            except Exception:
+                pass
+
+        return jsonify({
+            "running": running,
+            "latest_epoch": latest_epoch,
+            "start_epoch": start_epoch,
+            "total_checkpoints": total_checkpoints,
+            "last_log": last_log_lines,
+        })
+
     @app.route("/api/training/checkpoints")
     async def api_training_checkpoints() -> Response:
-        """List available training checkpoints."""
+        """List available training checkpoints with epoch info."""
+        import re
         checkpoints = []
         lightning_dir = training_dir / "lightning_logs"
         if lightning_dir.exists():
             ckpts = sorted(lightning_dir.rglob("*.ckpt"), key=lambda p: p.stat().st_mtime)
-            checkpoints = [str(c.relative_to(training_dir)) for c in ckpts]
+            for ckpt in ckpts:
+                m = re.search(r'epoch=(\d+)', ckpt.name)
+                epoch = int(m.group(1)) if m else None
+                checkpoints.append({
+                    "path": str(ckpt.relative_to(training_dir)),
+                    "epoch": epoch,
+                    "name": ckpt.name,
+                    "size_mb": round(ckpt.stat().st_size / (1024 * 1024)),
+                })
 
         onnx_path = output_dir.parent / "my_voice.onnx"
         return jsonify({

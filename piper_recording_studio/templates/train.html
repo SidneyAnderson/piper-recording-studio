@@ -207,9 +207,29 @@
 
                             <div id="trainStatus" class="mt-2" style="font-size: 0.9em;"></div>
 
+                            <!-- Training Progress -->
+                            <div id="trainProgressCard" class="mt-3" style="display:none;">
+                                <div class="card bg-light">
+                                    <div class="card-body py-3">
+                                        <div class="d-flex justify-content-between align-items-center mb-2">
+                                            <strong id="trainProgressLabel">Training Progress</strong>
+                                            <span id="trainEpochInfo" class="text-muted" style="font-size:0.9em;"></span>
+                                        </div>
+                                        <div class="progress mb-2" style="height: 20px;">
+                                            <div id="trainProgressBar" class="progress-bar bg-primary progress-bar-striped progress-bar-animated"
+                                                 role="progressbar" style="width: 0%;">0%</div>
+                                        </div>
+                                        <div class="d-flex justify-content-between" style="font-size: 0.85em;">
+                                            <span id="trainCheckpointCount" class="text-muted"></span>
+                                            <span id="trainElapsed" class="text-muted"></span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
                             <div id="trainLogCard" class="mt-3" style="display:none;">
                                 <label>Training Log</label>
-                                <div id="trainLog" class="border rounded p-2 bg-dark text-light" style="height: 20em; overflow-y: auto; font-family: monospace; font-size: 0.8em; white-space: pre-wrap;"></div>
+                                <div id="trainLog" class="border rounded p-2 bg-dark text-light" style="height: 14em; overflow-y: auto; font-family: monospace; font-size: 0.8em; white-space: pre-wrap;"></div>
                             </div>
 
                             <h6 class="mt-3">Batch size by GPU VRAM:</h6>
@@ -249,12 +269,27 @@
                     <div class="card mb-3 step-card pending" id="step7">
                         <div class="card-body">
                             <h5><span class="step-num">7</span> Test Your Voice</h5>
+                            <p class="text-muted">Export a checkpoint and test it. Try different epochs to find the best sounding one.</p>
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <label for="testCheckpointSelect">Checkpoint to test</label>
+                                    <select class="form-control" id="testCheckpointSelect">
+                                        <option value="">No checkpoints yet</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label>&nbsp;</label>
+                                    <button id="exportAndTestBtn" type="button" class="btn btn-primary w-100" disabled>
+                                        <i class="fas fa-file-export"></i> Export &amp; Test This Epoch
+                                    </button>
+                                </div>
+                            </div>
                             <div class="form-group mb-3">
                                 <label for="testText">Text to speak</label>
                                 <input type="text" class="form-control" id="testText" value="Hello, this is my custom trained voice!">
                             </div>
                             <button id="testVoiceBtn" type="button" class="btn btn-outline-primary" disabled>
-                                <i class="fas fa-volume-up"></i> Test Voice
+                                <i class="fas fa-volume-up"></i> Play Voice
                             </button>
                             <div id="testStatus" class="mt-2" style="font-size: 0.9em;"></div>
                             <div id="testPlayer" class="mt-2" style="display:none;">
@@ -568,14 +603,79 @@
 
             // --- Training ---
             let logAbort = null;
+            let progressInterval = null;
+            let trainStartTime = null;
 
             function setTraining(running) {
                 q('#trainStartBtn').style.display = running ? 'none' : '';
                 q('#trainStopBtn').style.display = running ? '' : 'none';
                 q('#trainLogCard').style.display = '';
+                q('#trainProgressCard').style.display = '';
                 q('#batchSize').disabled = running;
                 q('#maxEpochs').disabled = running;
                 q('#checkpointEpochs').disabled = running;
+
+                if (running) {
+                    trainStartTime = trainStartTime || Date.now();
+                    startProgressPolling();
+                } else {
+                    stopProgressPolling();
+                    // Remove animated stripe when done
+                    const bar = q('#trainProgressBar');
+                    bar.classList.remove('progress-bar-striped', 'progress-bar-animated');
+                }
+            }
+
+            function startProgressPolling() {
+                if (progressInterval) return;
+                pollProgress();
+                progressInterval = setInterval(pollProgress, 5000);
+            }
+
+            function stopProgressPolling() {
+                if (progressInterval) {
+                    clearInterval(progressInterval);
+                    progressInterval = null;
+                }
+            }
+
+            async function pollProgress() {
+                try {
+                    const resp = await fetch('/api/training/progress');
+                    const data = await resp.json();
+
+                    const maxEpochs = parseInt(q('#maxEpochs').value) || 1000;
+                    const startEpoch = data.start_epoch || 500;
+                    const latestEpoch = data.latest_epoch;
+                    const totalTarget = startEpoch + maxEpochs;
+
+                    if (latestEpoch !== null) {
+                        const done = latestEpoch - startEpoch + 1;
+                        const pct = Math.min(100, Math.round((done / maxEpochs) * 100));
+                        q('#trainProgressBar').style.width = pct + '%';
+                        q('#trainProgressBar').textContent = pct + '%';
+                        q('#trainEpochInfo').textContent = `Epoch ${latestEpoch + 1} / ${totalTarget} (${done} of ${maxEpochs} trained)`;
+                    }
+
+                    q('#trainCheckpointCount').textContent = `${data.total_checkpoints} checkpoint(s) saved`;
+
+                    if (trainStartTime) {
+                        const elapsed = Math.round((Date.now() - trainStartTime) / 1000);
+                        const mins = Math.floor(elapsed / 60);
+                        const secs = elapsed % 60;
+                        q('#trainElapsed').textContent = `Elapsed: ${mins}m ${secs}s`;
+                    }
+
+                    if (!data.running && progressInterval) {
+                        stopProgressPolling();
+                        setTraining(false);
+                        q('#trainStatus').innerHTML = '<span class="text-success"><i class="fas fa-check-circle"></i> Training complete!</span>';
+                        loadCheckpoints();
+                    }
+
+                    // Refresh checkpoint lists
+                    loadCheckpoints();
+                } catch(e) { /* ignore */ }
             }
 
             function appendLog(text) {
@@ -651,26 +751,47 @@
                 try {
                     const resp = await fetch('/api/training/checkpoints');
                     const data = await resp.json();
+                    const ckpts = data.checkpoints || [];
+
+                    // Step 6: Export dropdown
                     const el = q('#checkpointList');
-                    if (!data.checkpoints || data.checkpoints.length === 0) {
+                    if (ckpts.length === 0) {
                         el.innerHTML = '<p class="text-muted">No checkpoints yet. Start training first.</p>';
                         q('#exportBtn').disabled = true;
+                    } else {
+                        let html = '<label>Select a checkpoint to export:</label>';
+                        html += '<select id="checkpointSelect" class="form-control">';
+                        ckpts.forEach((c, i) => {
+                            const sel = i === ckpts.length - 1 ? ' selected' : '';
+                            const label = c.epoch !== null ? `Epoch ${c.epoch + 1} (${c.size_mb} MB)` : c.name;
+                            html += `<option value="${c.path}"${sel}>${label}</option>`;
+                        });
+                        html += '</select>';
+                        if (data.onnx_exists) {
+                            html += '<p class="text-success mt-1" style="font-size:0.85em;"><i class="fas fa-check-circle"></i> Exported model: my_voice.onnx</p>';
+                        }
+                        el.innerHTML = html;
+                        q('#exportBtn').disabled = false;
+                    }
+
+                    // Step 7: Test checkpoint dropdown
+                    const testSel = q('#testCheckpointSelect');
+                    testSel.innerHTML = '';
+                    if (ckpts.length === 0) {
+                        testSel.innerHTML = '<option value="">No checkpoints yet</option>';
+                        q('#exportAndTestBtn').disabled = true;
                         q('#testVoiceBtn').disabled = !data.onnx_exists;
-                        return;
+                    } else {
+                        ckpts.forEach((c, i) => {
+                            const opt = document.createElement('option');
+                            opt.value = c.path;
+                            opt.textContent = c.epoch !== null ? `Epoch ${c.epoch + 1} (${c.size_mb} MB)` : c.name;
+                            if (i === ckpts.length - 1) opt.selected = true;
+                            testSel.appendChild(opt);
+                        });
+                        q('#exportAndTestBtn').disabled = false;
+                        q('#testVoiceBtn').disabled = !data.onnx_exists;
                     }
-                    let html = '<label>Select a checkpoint to export:</label>';
-                    html += '<select id="checkpointSelect" class="form-control">';
-                    data.checkpoints.forEach((c, i) => {
-                        const sel = i === data.checkpoints.length - 1 ? ' selected' : '';
-                        html += `<option value="${c}"${sel}>${c}</option>`;
-                    });
-                    html += '</select>';
-                    if (data.onnx_exists) {
-                        html += '<p class="text-success mt-1" style="font-size:0.85em;"><i class="fas fa-check-circle"></i> Exported model: my_voice.onnx</p>';
-                    }
-                    el.innerHTML = html;
-                    q('#exportBtn').disabled = false;
-                    q('#testVoiceBtn').disabled = !data.onnx_exists;
                 } catch(e) { /* ignore */ }
             }
 
@@ -701,6 +822,33 @@
             });
 
             // --- Test voice ---
+            q('#exportAndTestBtn').addEventListener('click', async function() {
+                const checkpoint = q('#testCheckpointSelect').value;
+                if (!checkpoint) return;
+                const statusEl = q('#testStatus');
+                this.disabled = true;
+                statusEl.innerHTML = '<span class="text-muted">Exporting checkpoint to ONNX...</span>';
+
+                try {
+                    const resp = await fetch('/api/training/export', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ checkpoint }),
+                    });
+                    const data = await resp.json();
+                    if (data.ok) {
+                        statusEl.innerHTML = '<span class="text-success">Exported! Click "Play Voice" to test.</span>';
+                        q('#testVoiceBtn').disabled = false;
+                        loadCheckpoints();
+                    } else {
+                        statusEl.innerHTML = `<span class="text-danger">${data.error}</span>`;
+                    }
+                } catch(e) {
+                    statusEl.innerHTML = `<span class="text-danger">Error: ${e.message}</span>`;
+                }
+                this.disabled = false;
+            });
+
             q('#testVoiceBtn').addEventListener('click', async function() {
                 const text = q('#testText').value.trim();
                 if (!text) return;
