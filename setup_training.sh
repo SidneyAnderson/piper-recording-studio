@@ -165,6 +165,15 @@ if [ -f "build_monotonic_align.sh" ]; then
     bash build_monotonic_align.sh 2>/dev/null || echo "  (monotonic align build skipped or already built)"
 fi
 
+# Patch Piper to support PyTorch 2.6+ checkpoint loading
+# PyTorch 2.6 defaults torch.load to weights_only=True which rejects
+# pathlib.PosixPath found in older checkpoints
+PIPER_MAIN="piper_train/__main__.py"
+if [ -f "$PIPER_MAIN" ] && ! grep -q "add_safe_globals" "$PIPER_MAIN"; then
+    echo "  Patching Piper for PyTorch 2.6+ checkpoint compatibility..."
+    sed -i '/^import torch$/a import pathlib\nif hasattr(torch.serialization, "add_safe_globals"):\n    torch.serialization.add_safe_globals([pathlib.PosixPath, pathlib.WindowsPath])' "$PIPER_MAIN"
+fi
+
 echo "  Piper training environment ready."
 echo ""
 
