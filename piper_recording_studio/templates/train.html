@@ -85,33 +85,54 @@ bash build_monotonic_align.sh</pre>
                     </div>
 
                     <!-- Step 3: Checkpoint -->
-                    <div class="card mb-3 step-card pending" id="step3">
+                    <div class="card mb-3 step-card active" id="step3">
                         <div class="card-body">
                             <h5><span class="step-num">3</span> Download Pre-Trained Checkpoint</h5>
                             <p>Fine-tuning from an existing checkpoint produces much better results than training from scratch, especially with fewer than 5,000 samples.</p>
 
-                            <div class="alert alert-warning">
+                            <div class="alert alert-info">
                                 <strong>Why fine-tune?</strong> With {{ num_samples }} samples, training from scratch would need 10x more data. Fine-tuning uses an existing model's knowledge of speech patterns and only adapts the voice characteristics to match your dataset.
                             </div>
 
-                            <h6>Recommended checkpoint for English:</h6>
-                            <div class="cmd-block">
-                                <pre>mkdir -p checkpoints
-
-wget -O checkpoints/en_US-lessac-medium.ckpt \
-  "https://huggingface.co/datasets/rhasspy/piper-checkpoints/resolve/main/en/en_US/lessac/medium/epoch%3D2164-step%3D1355540.ckpt"</pre>
+                            <div class="row mb-3">
+                                <div class="col-md-4">
+                                    <label for="ckptLanguage">Language</label>
+                                    <select class="form-control" id="ckptLanguage">
+                                        <option value="">Select language...</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-4">
+                                    <label for="ckptVoice">Voice / Locale</label>
+                                    <select class="form-control" id="ckptVoice" disabled>
+                                        <option value="">Select voice...</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-4">
+                                    <label for="ckptQuality">Quality</label>
+                                    <select class="form-control" id="ckptQuality" disabled>
+                                        <option value="">Select quality...</option>
+                                    </select>
+                                </div>
                             </div>
-                            <p class="text-muted mt-2">~400 MB download. Browse all checkpoints at <a href="https://huggingface.co/datasets/rhasspy/piper-checkpoints" target="_blank">huggingface.co/datasets/rhasspy/piper-checkpoints</a></p>
+
+                            <div id="ckptInfo" class="mb-3" style="font-size: 0.9em;"></div>
+
+                            <button id="downloadCkptBtn" type="button" class="btn btn-primary w-100" disabled>
+                                <i class="fas fa-download"></i> Download Checkpoint
+                            </button>
+                            <div id="ckptProgress" class="mt-2" style="font-size: 0.9em;"></div>
 
                             <h6 class="mt-3">Quality tiers:</h6>
                             <table class="table table-sm">
-                                <thead><tr><th>Tier</th><th>Sample Rate</th><th>Speed</th><th>Quality</th></tr></thead>
+                                <thead><tr><th>Tier</th><th>Sample Rate</th><th>Model Size</th><th>Quality</th></tr></thead>
                                 <tbody>
-                                    <tr><td>Low</td><td>16,000 Hz</td><td>Fastest</td><td>Basic</td></tr>
-                                    <tr class="table-active"><td><strong>Medium</strong></td><td><strong>22,050 Hz</strong></td><td><strong>Balanced</strong></td><td><strong>Good (recommended)</strong></td></tr>
-                                    <tr><td>High</td><td>22,050 Hz</td><td>Slower</td><td>Best</td></tr>
+                                    <tr><td>Low</td><td>16,000 Hz</td><td>~200 MB</td><td>Fastest inference, basic quality</td></tr>
+                                    <tr><td>Medium</td><td>22,050 Hz</td><td>~400 MB</td><td>Good balance of speed and quality</td></tr>
+                                    <tr><td><strong>High</strong></td><td><strong>22,050 Hz</strong></td><td><strong>~1 GB</strong></td><td><strong>Best quality (recommended if GPU allows)</strong></td></tr>
                                 </tbody>
                             </table>
+
+                            <p class="text-muted" style="font-size:0.85em;">Browse all checkpoints at <a href="https://huggingface.co/datasets/rhasspy/piper-checkpoints" target="_blank">huggingface.co/datasets/rhasspy/piper-checkpoints</a></p>
                         </div>
                     </div>
 
@@ -454,6 +475,160 @@ python3 -m piper_train.preprocess \
                 }
             });
 
+            // --- Checkpoint selector ---
+            let allCheckpoints = [];
+
+            async function loadAvailableCheckpoints() {
+                try {
+                    const resp = await fetch('/api/training/available-checkpoints');
+                    const data = await resp.json();
+                    allCheckpoints = data.checkpoints || [];
+
+                    // Populate language dropdown (unique languages)
+                    const langs = [...new Set(allCheckpoints.map(c => c.language))].sort();
+                    const langSel = q('#ckptLanguage');
+                    langSel.innerHTML = '<option value="">Select language...</option>';
+                    langs.forEach(l => {
+                        const opt = document.createElement('option');
+                        opt.value = l;
+                        opt.textContent = l;
+                        langSel.appendChild(opt);
+                    });
+                } catch(e) { /* ignore */ }
+            }
+
+            q('#ckptLanguage').addEventListener('change', function() {
+                const lang = this.value;
+                const voiceSel = q('#ckptVoice');
+                const qualSel = q('#ckptQuality');
+                voiceSel.innerHTML = '<option value="">Select voice...</option>';
+                qualSel.innerHTML = '<option value="">Select quality...</option>';
+                qualSel.disabled = true;
+                q('#downloadCkptBtn').disabled = true;
+                q('#ckptInfo').innerHTML = '';
+
+                if (!lang) { voiceSel.disabled = true; return; }
+
+                const voices = allCheckpoints.filter(c => c.language === lang);
+                const uniqueVoices = [];
+                const seen = new Set();
+                voices.forEach(c => {
+                    const key = `${c.locale}/${c.voice}`;
+                    if (!seen.has(key)) {
+                        seen.add(key);
+                        uniqueVoices.push(c);
+                    }
+                });
+
+                uniqueVoices.forEach(c => {
+                    const opt = document.createElement('option');
+                    opt.value = `${c.locale}/${c.voice}`;
+                    opt.textContent = `${c.voice} (${c.locale})`;
+                    voiceSel.appendChild(opt);
+                });
+                voiceSel.disabled = false;
+            });
+
+            q('#ckptVoice').addEventListener('change', function() {
+                const [locale, voice] = (this.value || '/').split('/');
+                const qualSel = q('#ckptQuality');
+                qualSel.innerHTML = '<option value="">Select quality...</option>';
+                q('#downloadCkptBtn').disabled = true;
+                q('#ckptInfo').innerHTML = '';
+
+                if (!locale) { qualSel.disabled = true; return; }
+
+                const qualities = allCheckpoints.filter(c => c.locale === locale && c.voice === voice);
+                qualities.forEach(c => {
+                    const opt = document.createElement('option');
+                    opt.value = c.quality;
+                    opt.textContent = `${c.quality} (~${c.size_mb} MB, ${c.sample_rate} Hz) — ${c.description}`;
+                    qualSel.appendChild(opt);
+                });
+
+                // Auto-select highest quality
+                if (qualities.length > 0) {
+                    const best = qualities.find(c => c.quality === 'high') || qualities[qualities.length - 1];
+                    qualSel.value = best.quality;
+                    qualSel.dispatchEvent(new Event('change'));
+                }
+                qualSel.disabled = false;
+            });
+
+            q('#ckptQuality').addEventListener('change', function() {
+                const quality = this.value;
+                const [locale, voice] = (q('#ckptVoice').value || '/').split('/');
+                if (!quality || !locale) {
+                    q('#downloadCkptBtn').disabled = true;
+                    q('#ckptInfo').innerHTML = '';
+                    return;
+                }
+
+                const ckpt = allCheckpoints.find(c => c.locale === locale && c.voice === voice && c.quality === quality);
+                if (ckpt) {
+                    q('#ckptInfo').innerHTML = `<span class="text-muted">Selected: <strong>${ckpt.voice}</strong> (${ckpt.locale}) — ${ckpt.quality} quality, ${ckpt.sample_rate} Hz, ~${ckpt.size_mb} MB</span>`;
+                }
+                q('#downloadCkptBtn').disabled = false;
+            });
+
+            q('#downloadCkptBtn').addEventListener('click', async function() {
+                const [locale, voice] = (q('#ckptVoice').value || '/').split('/');
+                const quality = q('#ckptQuality').value;
+                if (!locale || !voice || !quality) return;
+
+                const progressEl = q('#ckptProgress');
+                q('#downloadCkptBtn').disabled = true;
+                progressEl.innerHTML = '<span class="text-muted">Starting download...</span>';
+
+                try {
+                    const resp = await fetch('/api/training/download-checkpoint', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ locale, voice, quality }),
+                    });
+
+                    const contentType = resp.headers.get('content-type') || '';
+                    if (contentType.includes('application/json')) {
+                        const data = await resp.json();
+                        if (data.ok) {
+                            progressEl.innerHTML = `<span class="text-success"><i class="fas fa-check-circle"></i> ${data.message}</span>`;
+                        } else {
+                            progressEl.innerHTML = `<span class="text-danger">${data.error}</span>`;
+                        }
+                    } else {
+                        // SSE stream
+                        const reader = resp.body.getReader();
+                        const decoder = new TextDecoder();
+                        let buffer = '';
+
+                        while (true) {
+                            const { done, value } = await reader.read();
+                            if (done) break;
+                            buffer += decoder.decode(value, { stream: true });
+                            const lines = buffer.split('\n');
+                            buffer = lines.pop();
+                            for (const line of lines) {
+                                if (!line.startsWith('data: ')) continue;
+                                const data = JSON.parse(line.slice(6));
+                                if (data.type === 'progress') {
+                                    const pct = data.percent ? ` (${data.percent}%)` : '';
+                                    progressEl.innerHTML = `<span class="text-muted">${data.message}</span>`;
+                                } else if (data.type === 'done') {
+                                    progressEl.innerHTML = `<span class="text-success"><i class="fas fa-check-circle"></i> ${data.message}</span>`;
+                                    checkDataset();
+                                } else if (data.type === 'error') {
+                                    progressEl.innerHTML = `<span class="text-danger">${data.message}</span>`;
+                                }
+                            }
+                        }
+                    }
+                } catch(e) {
+                    progressEl.innerHTML = `<span class="text-danger">Error: ${e.message}</span>`;
+                }
+                q('#downloadCkptBtn').disabled = false;
+            });
+
+            loadAvailableCheckpoints();
             checkDataset();
         </script>
     </body>

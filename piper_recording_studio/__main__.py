@@ -21,6 +21,7 @@ from quart import (
 )
 
 from elevenlabs_generate.client import ElevenLabsConfig, synthesize, test_api_key, get_models, get_voice_info
+from train.checkpoints import list_all as list_checkpoints, get_checkpoint_url, get_checkpoint_filename
 
 _LOGGER = logging.getLogger(__name__)
 _DIR = Path(__file__).parent
@@ -548,6 +549,57 @@ def main() -> None:
             return jsonify({"error": "Voice generation timed out."}), 500
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/training/available-checkpoints")
+    async def api_available_checkpoints() -> Response:
+        """List all available pre-trained checkpoints."""
+        return jsonify({"checkpoints": list_checkpoints()})
+
+    @app.route("/api/training/download-checkpoint", methods=["POST"])
+    async def api_download_checkpoint() -> Response:
+        """Download a pre-trained checkpoint from HuggingFace."""
+        import subprocess
+
+        data = await request.get_json()
+        locale = data.get("locale", "")
+        voice = data.get("voice", "")
+        quality = data.get("quality", "")
+
+        url = get_checkpoint_url(locale, voice, quality)
+        if not url:
+            return jsonify({"ok": False, "error": "Checkpoint not found in catalog."})
+
+        filename = get_checkpoint_filename(locale, voice, quality)
+        dest = checkpoints_dir / filename
+        checkpoints_dir.mkdir(parents=True, exist_ok=True)
+
+        if dest.exists():
+            return jsonify({"ok": True, "message": "Checkpoint already downloaded.", "path": str(dest)})
+
+        async def download_stream():
+            yield f"data: {json.dumps({'type': 'progress', 'message': f'Downloading {filename}...'})}\n\n"
+            try:
+                async with httpx.AsyncClient(follow_redirects=True) as client:
+                    async with client.stream("GET", url, timeout=600.0) as resp:
+                        resp.raise_for_status()
+                        total = int(resp.headers.get("content-length", 0))
+                        downloaded = 0
+                        with open(dest, "wb") as f:
+                            async for chunk in resp.aiter_bytes(chunk_size=1024 * 1024):
+                                f.write(chunk)
+                                downloaded += len(chunk)
+                                if total > 0:
+                                    pct = int(downloaded / total * 100)
+                                    mb = downloaded // (1024 * 1024)
+                                    total_mb = total // (1024 * 1024)
+                                    yield f"data: {json.dumps({'type': 'progress', 'message': f'Downloading... {mb}/{total_mb} MB ({pct}%)', 'percent': pct})}\n\n"
+                yield f"data: {json.dumps({'type': 'done', 'message': f'Downloaded {filename}', 'path': str(dest)})}\n\n"
+            except Exception as exc:
+                if dest.exists():
+                    dest.unlink()
+                yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+
+        return Response(download_stream(), content_type="text/event-stream")
 
     env_path = output_dir.parent / ".env"
 

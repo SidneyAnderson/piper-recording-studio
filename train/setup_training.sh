@@ -18,8 +18,8 @@ PIPER_DIR="$PROJECT_DIR/piper"
 CHECKPOINT_DIR="$PROJECT_DIR/checkpoints"
 SAMPLE_RATE=22050
 QUALITY="medium"
-CHECKPOINT_URL="https://huggingface.co/datasets/rhasspy/piper-checkpoints/resolve/main/en/en_US/lessac/medium/epoch%3D2164-step%3D1355540.ckpt"
-CHECKPOINT_FILE="en_US-lessac-medium.ckpt"
+CHECKPOINT_URL="https://huggingface.co/datasets/rhasspy/piper-checkpoints/resolve/main/en/en_GB/cori/high/cori-high-500.ckpt"
+CHECKPOINT_FILE="en_GB-cori-high.ckpt"
 
 usage() {
     cat <<EOF
