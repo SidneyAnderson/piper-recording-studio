@@ -528,26 +528,22 @@ def main() -> None:
         elif train_mode == "finetune" and checkpoint_file:
             ckpt_to_use = checkpoint_file
 
-        # Determine absolute max_epochs by detecting checkpoint's current epoch
+        # Read checkpoint's current epoch to calculate absolute max_epochs
         max_epochs = requested_epochs
         if ckpt_to_use:
-            # Try to extract epoch from filename (e.g. "epoch=499-step=..." or "cori-high-500")
-            import re
-            ckpt_name = Path(ckpt_to_use).stem
-            epoch_match = re.search(r'epoch[=_](\d+)', ckpt_name)
-            if epoch_match:
-                ckpt_epoch = int(epoch_match.group(1)) + 1  # epoch is 0-indexed
-                max_epochs = ckpt_epoch + requested_epochs
+            try:
+                import pathlib as _pathlib
+                import torch as _torch
+                if hasattr(_torch.serialization, "add_safe_globals"):
+                    _torch.serialization.add_safe_globals([_pathlib.PosixPath, _pathlib.WindowsPath])
+                ckpt_data = _torch.load(ckpt_to_use, map_location="cpu", weights_only=False)
+                ckpt_epoch = ckpt_data.get("epoch", 0)
+                del ckpt_data  # free memory
+                max_epochs = ckpt_epoch + 1 + requested_epochs  # epoch is 0-indexed
                 _LOGGER.info("Checkpoint at epoch %d, will train %d additional epochs (max_epochs=%d)",
-                             ckpt_epoch, requested_epochs, max_epochs)
-            else:
-                # Try number in filename (e.g. "cori-high-500")
-                num_match = re.search(r'(\d+)\.ckpt$', Path(ckpt_to_use).name)
-                if num_match:
-                    ckpt_epoch = int(num_match.group(1))
-                    max_epochs = ckpt_epoch + requested_epochs
-                    _LOGGER.info("Checkpoint at epoch ~%d, will train %d additional epochs (max_epochs=%d)",
-                                 ckpt_epoch, requested_epochs, max_epochs)
+                             ckpt_epoch + 1, requested_epochs, max_epochs)
+            except Exception as exc:
+                _LOGGER.warning("Could not read checkpoint epoch, using max_epochs=%d: %s", max_epochs, exc)
 
         cmd = [
             str(venv_python), "-m", "piper_train",
