@@ -126,23 +126,19 @@
                             </div>
 
                             <div class="row mb-3">
-                                <div class="col-md-4">
-                                    <label for="ckptLanguage">Language</label>
-                                    <select class="form-control" id="ckptLanguage">
-                                        <option value="">Select language...</option>
+                                <div class="col-md-6">
+                                    <label for="ckptLocale">Locale</label>
+                                    <select class="form-control" id="ckptLocale">
+                                        <option value="">Select locale...</option>
                                     </select>
+                                    <small class="text-muted">Match this to your training data language</small>
                                 </div>
-                                <div class="col-md-4">
-                                    <label for="ckptVoice">Voice / Locale</label>
-                                    <select class="form-control" id="ckptVoice" disabled>
-                                        <option value="">Select voice...</option>
-                                    </select>
-                                </div>
-                                <div class="col-md-4">
+                                <div class="col-md-6">
                                     <label for="ckptQuality">Quality</label>
                                     <select class="form-control" id="ckptQuality" disabled>
-                                        <option value="">Select quality...</option>
+                                        <option value="">Select locale first...</option>
                                     </select>
+                                    <small class="text-muted">High recommended when GPU has 16+ GB VRAM</small>
                                 </div>
                             </div>
 
@@ -152,18 +148,6 @@
                                 <i class="fas fa-download"></i> Download Checkpoint
                             </button>
                             <div id="ckptProgress" class="mt-2" style="font-size: 0.9em;"></div>
-
-                            <h6 class="mt-3">Quality tiers:</h6>
-                            <table class="table table-sm">
-                                <thead><tr><th>Tier</th><th>Sample Rate</th><th>Model Size</th><th>Quality</th></tr></thead>
-                                <tbody>
-                                    <tr><td>Low</td><td>16,000 Hz</td><td>~200 MB</td><td>Fastest inference, basic quality</td></tr>
-                                    <tr><td>Medium</td><td>22,050 Hz</td><td>~400 MB</td><td>Good balance of speed and quality</td></tr>
-                                    <tr><td><strong>High</strong></td><td><strong>22,050 Hz</strong></td><td><strong>~1 GB</strong></td><td><strong>Best quality (recommended if GPU allows)</strong></td></tr>
-                                </tbody>
-                            </table>
-
-                            <p class="text-muted" style="font-size:0.85em;">Browse all checkpoints at <a href="https://huggingface.co/datasets/rhasspy/piper-checkpoints" target="_blank">huggingface.co/datasets/rhasspy/piper-checkpoints</a></p>
                         </div>
                     </div>
 
@@ -750,6 +734,13 @@
 
             // --- Checkpoint selector ---
             let allCheckpoints = [];
+            let selectedCkpt = null;
+
+            function getBestVoiceForLocale(locale, quality) {
+                // Find all voices for this locale+quality, prefer the one with highest tier available
+                const matches = allCheckpoints.filter(c => c.locale === locale && c.quality === quality);
+                return matches.length > 0 ? matches[0] : null;
+            }
 
             async function loadAvailableCheckpoints() {
                 try {
@@ -757,97 +748,81 @@
                     const data = await resp.json();
                     allCheckpoints = data.checkpoints || [];
 
-                    // Populate language dropdown (unique languages)
-                    const langs = [...new Set(allCheckpoints.map(c => c.language))].sort();
-                    const langSel = q('#ckptLanguage');
-                    langSel.innerHTML = '<option value="">Select language...</option>';
-                    langs.forEach(l => {
+                    // Build locale list — group by locale, show best quality available
+                    const localeMap = {};
+                    allCheckpoints.forEach(c => {
+                        if (!localeMap[c.locale]) localeMap[c.locale] = { language: c.language, qualities: new Set() };
+                        localeMap[c.locale].qualities.add(c.quality);
+                    });
+
+                    const localeSel = q('#ckptLocale');
+                    localeSel.innerHTML = '<option value="">Select locale...</option>';
+                    Object.entries(localeMap).sort((a, b) => a[1].language.localeCompare(b[1].language)).forEach(([locale, info]) => {
                         const opt = document.createElement('option');
-                        opt.value = l;
-                        opt.textContent = l;
-                        langSel.appendChild(opt);
+                        opt.value = locale;
+                        const quals = ['high', 'medium', 'low'].filter(q => info.qualities.has(q));
+                        opt.textContent = `${info.language} — ${locale} (${quals.join(', ')})`;
+                        localeSel.appendChild(opt);
                     });
                 } catch(e) { /* ignore */ }
             }
 
-            q('#ckptLanguage').addEventListener('change', function() {
-                const lang = this.value;
-                const voiceSel = q('#ckptVoice');
+            q('#ckptLocale').addEventListener('change', function() {
+                const locale = this.value;
                 const qualSel = q('#ckptQuality');
-                voiceSel.innerHTML = '<option value="">Select voice...</option>';
-                qualSel.innerHTML = '<option value="">Select quality...</option>';
-                qualSel.disabled = true;
+                qualSel.innerHTML = '';
                 q('#downloadCkptBtn').disabled = true;
                 q('#ckptInfo').innerHTML = '';
-
-                if (!lang) { voiceSel.disabled = true; return; }
-
-                const voices = allCheckpoints.filter(c => c.language === lang);
-                const uniqueVoices = [];
-                const seen = new Set();
-                voices.forEach(c => {
-                    const key = `${c.locale}/${c.voice}`;
-                    if (!seen.has(key)) {
-                        seen.add(key);
-                        uniqueVoices.push(c);
-                    }
-                });
-
-                uniqueVoices.forEach(c => {
-                    const opt = document.createElement('option');
-                    opt.value = `${c.locale}/${c.voice}`;
-                    opt.textContent = `${c.voice} (${c.locale})`;
-                    voiceSel.appendChild(opt);
-                });
-                voiceSel.disabled = false;
-            });
-
-            q('#ckptVoice').addEventListener('change', function() {
-                const [locale, voice] = (this.value || '/').split('/');
-                const qualSel = q('#ckptQuality');
-                qualSel.innerHTML = '<option value="">Select quality...</option>';
-                q('#downloadCkptBtn').disabled = true;
-                q('#ckptInfo').innerHTML = '';
+                selectedCkpt = null;
 
                 if (!locale) { qualSel.disabled = true; return; }
 
-                const qualities = allCheckpoints.filter(c => c.locale === locale && c.voice === voice);
-                qualities.forEach(c => {
-                    const opt = document.createElement('option');
-                    opt.value = c.quality;
-                    opt.textContent = `${c.quality} (~${c.size_mb} MB, ${c.sample_rate} Hz) — ${c.description}`;
-                    qualSel.appendChild(opt);
+                // Find available qualities for this locale (across all voices)
+                const available = {};
+                allCheckpoints.filter(c => c.locale === locale).forEach(c => {
+                    if (!available[c.quality] || c.quality === 'high') {
+                        available[c.quality] = c;
+                    }
                 });
 
+                // Order: high, medium, low
+                ['high', 'medium', 'low'].forEach(q => {
+                    if (available[q]) {
+                        const c = available[q];
+                        const opt = document.createElement('option');
+                        opt.value = `${c.voice}/${q}`;
+                        opt.textContent = `${q.charAt(0).toUpperCase() + q.slice(1)} — ${c.sample_rate} Hz, ~${c.size_mb} MB`;
+                        if (q === 'high') opt.textContent += ' (recommended)';
+                        qualSel.appendChild(opt);
+                    }
+                });
+
+                qualSel.disabled = false;
                 // Auto-select highest quality
-                if (qualities.length > 0) {
-                    const best = qualities.find(c => c.quality === 'high') || qualities[qualities.length - 1];
-                    qualSel.value = best.quality;
+                if (qualSel.options.length > 0) {
+                    qualSel.selectedIndex = 0;
                     qualSel.dispatchEvent(new Event('change'));
                 }
-                qualSel.disabled = false;
             });
 
             q('#ckptQuality').addEventListener('change', function() {
-                const quality = this.value;
-                const [locale, voice] = (q('#ckptVoice').value || '/').split('/');
-                if (!quality || !locale) {
-                    q('#downloadCkptBtn').disabled = true;
-                    q('#ckptInfo').innerHTML = '';
-                    return;
-                }
+                const val = this.value;
+                if (!val) { q('#downloadCkptBtn').disabled = true; q('#ckptInfo').innerHTML = ''; return; }
 
-                const ckpt = allCheckpoints.find(c => c.locale === locale && c.voice === voice && c.quality === quality);
-                if (ckpt) {
-                    q('#ckptInfo').innerHTML = `<span class="text-muted">Selected: <strong>${ckpt.voice}</strong> (${ckpt.locale}) — ${ckpt.quality} quality, ${ckpt.sample_rate} Hz, ~${ckpt.size_mb} MB</span>`;
+                const locale = q('#ckptLocale').value;
+                const [voice, quality] = val.split('/');
+                selectedCkpt = allCheckpoints.find(c => c.locale === locale && c.voice === voice && c.quality === quality);
+
+                if (selectedCkpt) {
+                    q('#ckptInfo').innerHTML = `<span class="text-muted">${selectedCkpt.quality.charAt(0).toUpperCase() + selectedCkpt.quality.slice(1)} quality checkpoint for ${locale} — ${selectedCkpt.sample_rate} Hz, ~${selectedCkpt.size_mb} MB download</span>`;
+                    q('#downloadCkptBtn').disabled = false;
                 }
-                q('#downloadCkptBtn').disabled = false;
             });
 
             q('#downloadCkptBtn').addEventListener('click', async function() {
-                const [locale, voice] = (q('#ckptVoice').value || '/').split('/');
-                const quality = q('#ckptQuality').value;
-                if (!locale || !voice || !quality) return;
+                if (!selectedCkpt) return;
+                const locale = q('#ckptLocale').value;
+                const [voice, quality] = q('#ckptQuality').value.split('/');
 
                 const progressEl = q('#ckptProgress');
                 q('#downloadCkptBtn').disabled = true;
@@ -869,11 +844,9 @@
                             progressEl.innerHTML = `<span class="text-danger">${data.error}</span>`;
                         }
                     } else {
-                        // SSE stream
                         const reader = resp.body.getReader();
                         const decoder = new TextDecoder();
                         let buffer = '';
-
                         while (true) {
                             const { done, value } = await reader.read();
                             if (done) break;
@@ -884,7 +857,6 @@
                                 if (!line.startsWith('data: ')) continue;
                                 const data = JSON.parse(line.slice(6));
                                 if (data.type === 'progress') {
-                                    const pct = data.percent ? ` (${data.percent}%)` : '';
                                     progressEl.innerHTML = `<span class="text-muted">${data.message}</span>`;
                                 } else if (data.type === 'done') {
                                     progressEl.innerHTML = `<span class="text-success"><i class="fas fa-check-circle"></i> ${data.message}</span>`;
