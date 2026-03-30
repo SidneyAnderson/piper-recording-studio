@@ -790,15 +790,24 @@ print(json.dumps(results))
 
     @app.route("/api/training/checkpoints")
     async def api_training_checkpoints() -> Response:
-        """List available training checkpoints with epoch info."""
+        """List available training checkpoints with epoch info.
+
+        Returns both internal epoch numbers and a base_epoch offset so the
+        frontend can calculate user-facing epoch numbers (1 to N).
+        """
         import re
         checkpoints = []
+        first_epoch = None
+        checkpoint_interval = 10
+
         lightning_dir = training_dir / "lightning_logs"
         if lightning_dir.exists():
             ckpts = sorted(lightning_dir.rglob("*.ckpt"), key=lambda p: p.stat().st_mtime)
             for ckpt in ckpts:
                 m = re.search(r'epoch=(\d+)', ckpt.name)
                 epoch = int(m.group(1)) if m else None
+                if epoch is not None and first_epoch is None:
+                    first_epoch = epoch
                 checkpoints.append({
                     "path": str(ckpt.relative_to(training_dir)),
                     "epoch": epoch,
@@ -806,10 +815,14 @@ print(json.dumps(results))
                     "size_mb": round(ckpt.stat().st_size / (1024 * 1024)),
                 })
 
+        # base_epoch is where fine-tuning started (first checkpoint minus save interval)
+        base_epoch = (first_epoch - checkpoint_interval) if first_epoch is not None else 0
+
         # Check if any exported models exist
         has_models = models_dir.exists() and any(models_dir.glob("*.onnx"))
         return jsonify({
             "checkpoints": checkpoints,
+            "base_epoch": base_epoch,
             "onnx_exists": has_models,
         })
 
@@ -825,14 +838,18 @@ print(json.dumps(results))
         data = await request.get_json()
         checkpoint = data.get("checkpoint", "")
         profile_name = data.get("profileName", "voice")
+        user_epoch = data.get("userEpoch", None)  # User-facing epoch number (1 to N)
         ckpt_path = training_dir / checkpoint
 
         if not ckpt_path.exists():
             return jsonify({"ok": False, "error": f"Checkpoint not found: {checkpoint}"})
 
-        # Extract epoch from checkpoint filename
-        m = re.search(r'epoch=(\d+)', ckpt_path.name)
-        epoch = int(m.group(1)) + 1 if m else 0
+        # Use user-facing epoch if provided, otherwise fall back to internal
+        if user_epoch is not None:
+            epoch = int(user_epoch)
+        else:
+            m = re.search(r'epoch=(\d+)', ckpt_path.name)
+            epoch = int(m.group(1)) + 1 if m else 0
 
         # Sanitize profile name
         safe_name = "".join(c for c in profile_name if c.isalnum() or c in " _-").strip().replace(" ", "_")

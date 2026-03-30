@@ -892,10 +892,21 @@
             // --- Checkpoints & Export ---
             let selectedCheckpoint = null;
 
+            let ckptBaseEpoch = 0;
+
+            function userEpoch(c) {
+                // Convert internal epoch to user-facing (1 to N)
+                if (c.epoch !== null) {
+                    return Math.max(1, c.epoch - ckptBaseEpoch + 1);
+                }
+                return 0;
+            }
+
             function ckptLabel(c) {
                 const profile = getProfileName().replace(/ /g, '_');
-                if (c.epoch !== null) {
-                    return `${profile}.${String(c.epoch + 1).padStart(4, '0')}`;
+                const ue = userEpoch(c);
+                if (ue > 0) {
+                    return `${profile}.${String(ue).padStart(4, '0')}`;
                 }
                 return c.name;
             }
@@ -905,6 +916,7 @@
                     const resp = await fetch('/api/training/checkpoints');
                     const data = await resp.json();
                     const ckpts = data.checkpoints || [];
+                    ckptBaseEpoch = data.base_epoch || 0;
 
                     // Step 7: Export dropdown
                     const el = q('#checkpointList');
@@ -975,11 +987,18 @@
                 } catch(e) { /* ignore */ }
             }
 
+            function getUserEpochFromPath(path) {
+                const m = path.match(/epoch=(\d+)/);
+                if (m) return Math.max(1, parseInt(m[1]) - ckptBaseEpoch + 1);
+                return 0;
+            }
+
             q('#exportBtn').addEventListener('click', async function() {
                 const sel = q('#checkpointSelect');
                 if (!sel) return;
                 const checkpoint = sel.value;
                 const profileName = getProfileName();
+                const ue = getUserEpochFromPath(checkpoint);
                 const statusEl = q('#exportStatus');
                 statusEl.innerHTML = '<span class="text-muted">Exporting to ONNX...</span>';
                 q('#exportBtn').disabled = true;
@@ -987,7 +1006,7 @@
                     const resp = await fetch('/api/training/export', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ checkpoint, profileName }),
+                        body: JSON.stringify({ checkpoint, profileName, userEpoch: ue }),
                     });
                     const data = await resp.json();
                     if (data.ok) {
@@ -1011,6 +1030,7 @@
                 const checkpoint = q('#testCheckpointSelect').value;
                 if (!checkpoint) return;
                 const profileName = getProfileName();
+                const ue = getUserEpochFromPath(checkpoint);
                 const statusEl = q('#testStatus');
                 this.disabled = true;
                 statusEl.innerHTML = '<span class="text-muted">Exporting checkpoint to ONNX...</span>';
@@ -1019,7 +1039,7 @@
                     const resp = await fetch('/api/training/export', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ checkpoint, profileName }),
+                        body: JSON.stringify({ checkpoint, profileName, userEpoch: ue }),
                     });
                     const data = await resp.json();
                     if (data.ok) {
