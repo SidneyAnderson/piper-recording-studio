@@ -92,6 +92,40 @@ sudo chown -R "$(id -u):$(id -u)" output/
 See `--help` for more options. You may need to adjust the silence detection parameters to correctly remove button clicks and keypresses.
 
 
+## ElevenLabs TTS Generation
+
+Generate audio from prompts using the [ElevenLabs](https://elevenlabs.io/) API instead of recording manually. Useful for creating synthetic training datasets.
+
+### Web UI
+
+Start the recording studio as normal, then click **ElevenLabs TTS** on the home page (or visit http://localhost:8000/generate). Enter your API key, voice ID, model ID, select a language, and click Start. Progress streams in real time.
+
+### CLI
+
+``` sh
+python3 -m elevenlabs_generate \
+  --api-key YOUR_API_KEY \
+  --voice-id YOUR_VOICE_ID \
+  --model-id eleven_monolingual_v1 \
+  --language en-US
+```
+
+The API key can also be set via the `ELEVENLABS_API_KEY` environment variable.
+
+Additional options:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--prompts` | `prompts/` | Path to prompts directory |
+| `--output` | `output/` | Path to output directory |
+| `--sample-rate` | `24000` | Audio sample rate |
+| `--stability` | `0.5` | Voice stability (0.0–1.0) |
+| `--similarity-boost` | `0.75` | Voice similarity boost (0.0–1.0) |
+| `--rate-limit-delay` | `0.5` | Seconds between API calls |
+
+Generation is **resumable** — it skips prompts that already have output files. Audio is saved as WAV in the same `output/<language>/` structure used by the recorder, so the existing export pipeline works without changes.
+
+
 ## Multi-User Mode
 
 ``` sh
