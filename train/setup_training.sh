@@ -138,7 +138,9 @@ if [ ! -d ".venv" ]; then
 fi
 
 source .venv/bin/activate
-pip3 install --upgrade pip wheel setuptools -q
+# Piper requires pytorch-lightning~=1.7.0 which has invalid metadata
+# that pip>=24.1 rejects. Pin pip to a compatible version.
+pip3 install "pip<24.1" wheel setuptools -q
 pip3 install -e . -q
 
 if [ -f "build_monotonic_align.sh" ]; then
