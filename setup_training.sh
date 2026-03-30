@@ -153,10 +153,12 @@ fi
 source .venv/bin/activate
 # Piper requires pytorch-lightning~=1.7.0 which has invalid metadata
 # that pip>=24.1 rejects. Pin pip to a compatible version.
-pip3 install "pip<24.1" wheel setuptools -q
+pip3 install "pip>=23.0,<24.1" wheel setuptools -q
 pip3 install -e . -q
 # Pin compatible versions — Piper's deps pull in versions that are too new
 pip3 install "numpy<2" "torchmetrics==0.11.4" six -q
+# Install PyTorch with CUDA 12.8 for modern GPUs (RTX 40xx/50xx)
+pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128 -q
 
 if [ -f "build_monotonic_align.sh" ]; then
     echo "  Building monotonic alignment..."

@@ -534,13 +534,19 @@ def main() -> None:
             "--precision", "32",
         ]
 
-        # Training mode determines checkpoint usage
+        # Detect checkpoint quality tier to set --quality flag
+        ckpt_to_use = None
         if resume_ckpt:
-            # Always resume from existing training checkpoint (regardless of mode)
-            cmd.extend(["--resume_from_checkpoint", resume_ckpt])
+            ckpt_to_use = resume_ckpt
         elif train_mode == "finetune" and checkpoint_file:
-            cmd.extend(["--resume_from_checkpoint", checkpoint_file])
-        # train_mode == "scratch" with no resume_ckpt: no checkpoint flag = from scratch
+            ckpt_to_use = checkpoint_file
+
+        if ckpt_to_use:
+            cmd.extend(["--resume_from_checkpoint", ckpt_to_use])
+            # If checkpoint filename contains "high", use high quality architecture
+            if "high" in Path(ckpt_to_use).name.lower():
+                cmd.extend(["--quality", "high"])
+        # train_mode == "scratch" with no checkpoint: no checkpoint flag = from scratch
 
         _LOGGER.info("Starting training: %s", " ".join(cmd))
 
