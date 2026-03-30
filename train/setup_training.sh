@@ -97,14 +97,24 @@ if ! command -v python3 &>/dev/null; then
     exit 1
 fi
 
+MISSING_PKGS=""
 if ! command -v ffmpeg &>/dev/null; then
-    echo "ERROR: ffmpeg not found. Install with: sudo apt-get install ffmpeg"
-    exit 1
+    MISSING_PKGS="$MISSING_PKGS ffmpeg"
+fi
+if ! command -v espeak-ng &>/dev/null; then
+    MISSING_PKGS="$MISSING_PKGS espeak-ng"
 fi
 
-if ! command -v espeak-ng &>/dev/null; then
-    echo "WARNING: espeak-ng not found. Install with: sudo apt-get install espeak-ng"
-    echo "         espeak-ng is required for preprocessing."
+if [ -n "$MISSING_PKGS" ]; then
+    echo "  Missing system packages:$MISSING_PKGS"
+    echo "  Attempting to install..."
+    if sudo apt-get install -y $MISSING_PKGS; then
+        echo "  System packages installed."
+    else
+        echo "ERROR: Could not install$MISSING_PKGS."
+        echo "       Please run manually: sudo apt-get install$MISSING_PKGS"
+        exit 1
+    fi
 fi
 
 if ! command -v nvidia-smi &>/dev/null; then
