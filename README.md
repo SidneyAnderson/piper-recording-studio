@@ -257,9 +257,9 @@ Visit http://localhost:8000/train (or click **Training Guide** on the home page)
 
 * **Dataset status** — shows generated files, export status, and preprocessing state
 * **Checkpoint browser** — select locale and quality tier from 30+ languages; best checkpoint auto-selected; download with progress streaming
-* **Training launcher** — start/stop training with configurable batch size, epochs, and checkpoint frequency; live log streaming
-* **ONNX export** — select any training checkpoint and export to `.onnx` with one click
-* **Voice testing** — type text and hear your trained voice in the browser (requires `pip install piper-tts`)
+* **Training launcher** — start/stop training with configurable batch size, epochs, and checkpoint frequency; live progress bar and log streaming
+* **Voice testing** — select any training checkpoint, load it, type text, and listen in the browser to find the best epoch (requires `pip install piper-tts`)
+* **Model export** — export the best checkpoint as `profile_name.epoch.onnx` to the `models/` directory
 
 ### Selecting a checkpoint
 

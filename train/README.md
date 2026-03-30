@@ -6,13 +6,13 @@ This guide walks you through turning your exported dataset into a usable Piper T
 
 | Step | What it does | Time |
 |------|-------------|------|
-| 1. Export | Convert recordings to LJSpeech format | Minutes |
+| 1. Export dataset | Convert recordings to LJSpeech format | Minutes |
 | 2. Setup | Install Piper training environment | 10-15 min |
 | 3. Download checkpoint | Get a pre-trained model to fine-tune from | Minutes |
 | 4. Preprocess | Convert audio to training tensors | Minutes |
 | 5. Train | Fine-tune the voice model on GPU | Hours to days |
-| 6. Export | Convert checkpoint to .onnx for inference | Seconds |
-| 7. Test | Generate speech with your new voice | Seconds |
+| 6. Test | Listen to checkpoints and find the best epoch | Seconds |
+| 7. Export model | Save the best checkpoint as a portable .onnx file | Seconds |
 
 
 ## Prerequisites
@@ -184,50 +184,59 @@ Training checkpoints are ~400 MB each (high quality: ~1 GB). With `--checkpoint-
 - Keeping at least 10-50 GB free
 
 
-## Step 6: Export to ONNX
+## Step 6: Test Your Voice
 
-### Option A: Web UI
+Select a training checkpoint and listen to it. Try different epochs to find the best sounding one before exporting.
 
-Visit http://localhost:8000/train, select a checkpoint from the dropdown in Step 6, and click **Export Selected Checkpoint**.
+### Web UI
 
-### Option B: CLI
+Visit http://localhost:8000/train. In Step 6, select a checkpoint from the dropdown, click **Load & Test This Epoch**, type sample text, and click **Play Voice**. Requires `pip install piper-tts`.
 
-The web UI exports to `models/<profile_name>.<epoch>.onnx` (e.g. `models/British_Narrator.510.onnx`).
-
-**CLI alternative:**
-
-```sh
-cd piper/src/python
-source .venv/bin/activate
-
-python3 -m piper_train.export_onnx \
-  /path/to/training/lightning_logs/version_0/checkpoints/epoch=509-step=775720.ckpt \
-  /path/to/models/My_Voice.510.onnx
-
-# IMPORTANT: the config file MUST accompany the model
-cp /path/to/training/config.json /path/to/models/My_Voice.510.onnx.json
-```
-
-Both files (`.onnx` and `.onnx.json`) are required — the model will not work without the config.
-
-
-## Step 7: Test Your Voice
-
-### Option A: Web UI
-
-Visit http://localhost:8000/train, type text in Step 7, and click **Test Voice** to hear it in the browser. Requires `piper-tts` to be installed.
-
-### Option B: CLI
+### CLI
 
 ```sh
 pip install piper-tts
 
-echo "Hello, this is my custom voice!" | piper -m models/British_Narrator.510.onnx --output_file test.wav
+# Export a checkpoint temporarily for testing
+cd piper/src/python && source .venv/bin/activate
+python3 -m piper_train.export_onnx \
+  /path/to/training/lightning_logs/version_0/checkpoints/epoch=509-step=775720.ckpt \
+  /tmp/test_voice.onnx
+cp /path/to/training/config.json /tmp/test_voice.onnx.json
 
-# Play it
+# Listen
+echo "Hello, this is my custom voice!" | piper -m /tmp/test_voice.onnx --output_file test.wav
 aplay test.wav
-# or
-ffplay test.wav
+```
+
+
+## Step 7: Export Final Model
+
+Once you've found the best sounding epoch in Step 6, export it as your final model.
+
+### Web UI
+
+In Step 7, select the checkpoint and click **Export Selected Checkpoint**. The model is saved as `models/<profile_name>.<epoch>.onnx` (e.g. `models/British_Narrator.510.onnx`).
+
+### CLI
+
+```sh
+mkdir -p models
+
+python3 -m piper_train.export_onnx \
+  /path/to/training/lightning_logs/version_0/checkpoints/epoch=509-step=775720.ckpt \
+  models/My_Voice.510.onnx
+
+# IMPORTANT: the config file MUST accompany the model
+cp /path/to/training/config.json models/My_Voice.510.onnx.json
+```
+
+Both files (`.onnx` and `.onnx.json`) are required — the model will not work without the config.
+
+### Using your model
+
+```sh
+echo "Hello world!" | piper -m models/British_Narrator.510.onnx --output_file test.wav
 ```
 
 
