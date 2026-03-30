@@ -672,14 +672,32 @@ def main() -> None:
                     latest_epoch = epoch
 
         # Estimate the base epoch (where fine-tuning started)
-        # First checkpoint is saved checkpoint_interval epochs after the base
+        # First training checkpoint is saved checkpoint_interval epochs after the base
         checkpoint_interval = 10  # default
-        if first_epoch is not None and total_checkpoints == 1:
-            start_epoch = first_epoch - checkpoint_interval
-        elif first_epoch is not None:
+        if first_epoch is not None:
             start_epoch = first_epoch - checkpoint_interval
         else:
             start_epoch = 0
+
+        # Also estimate current epoch from events file modification time
+        # Each epoch takes ~7s, so we can estimate epochs since last checkpoint
+        estimated_epoch = latest_epoch
+        if latest_epoch is not None and running:
+            # Find the latest events file
+            events_files = sorted(lightning_dir.rglob("events.out.tfevents.*"), key=lambda p: p.stat().st_mtime)
+            if events_files:
+                latest_events_mtime = events_files[-1].stat().st_mtime
+                # Find the latest checkpoint mtime
+                latest_ckpt_files = sorted(lightning_dir.rglob("*.ckpt"), key=lambda p: p.stat().st_mtime)
+                if latest_ckpt_files:
+                    latest_ckpt_mtime = latest_ckpt_files[-1].stat().st_mtime
+                    # If events file is newer than last checkpoint, estimate additional epochs
+                    if latest_events_mtime > latest_ckpt_mtime:
+                        import time
+                        seconds_since_ckpt = time.time() - latest_ckpt_mtime
+                        # Rough estimate: ~7 seconds per epoch for high quality
+                        estimated_extra = int(seconds_since_ckpt / 7)
+                        estimated_epoch = latest_epoch + estimated_extra
 
         # Read last few lines of log for recent activity
         last_log_lines = []
@@ -694,6 +712,7 @@ def main() -> None:
         return jsonify({
             "running": running,
             "latest_epoch": latest_epoch,
+            "estimated_epoch": estimated_epoch,
             "start_epoch": start_epoch,
             "total_checkpoints": total_checkpoints,
             "last_log": last_log_lines,
