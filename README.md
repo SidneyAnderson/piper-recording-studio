@@ -96,9 +96,32 @@ See `--help` for more options. You may need to adjust the silence detection para
 
 Generate audio from prompts using the [ElevenLabs](https://elevenlabs.io/) API instead of recording manually. Useful for creating synthetic training datasets.
 
+### Requirements
+
+An ElevenLabs account with an API key is required. Create one at https://elevenlabs.io/ under **Developers > API Keys**. The key needs at minimum:
+
+* **Text to Speech** — Access
+* **Models** — Access
+* **Voices** — Read (for automatic voice/model detection)
+* **User** — Read (for API key validation)
+
 ### Web UI
 
-Start the recording studio as normal, then click **ElevenLabs TTS** on the home page (or visit http://localhost:8000/generate). Enter your API key, voice ID, model ID, select a language, and click Start. Progress streams in real time.
+Start the recording studio as normal, then click **ElevenLabs TTS** on the home page (or visit http://localhost:8000/generate).
+
+Features:
+
+* **API Key Test** — validates your key and shows tier/character usage
+* **Voice ID lookup** — enter a voice ID and the app automatically detects the voice name and selects the correct model
+* **Model dropdown** — populated from ElevenLabs with compatible models marked as "(recommended)"
+* **Voice preview** — generate and play a single sample to tune stability, similarity boost, and sample rate before committing to a full run
+* **Real-time progress** — SSE streaming with progress bar and scrollable log
+* **Auto-retry** — transient network errors retry up to 10 times with increasing backoff
+* **Auto-reconnect** — if the browser connection drops, it reconnects and resumes automatically (up to 5 times)
+* **Resumable** — stop and restart at any time; completed prompts are skipped
+* **Persistent config** — API key, voice ID, and model ID are saved to `.env` and auto-loaded on next visit
+
+Note: the 44100 Hz sample rate requires an ElevenLabs Pro tier or above.
 
 ### CLI
 
@@ -106,11 +129,17 @@ Start the recording studio as normal, then click **ElevenLabs TTS** on the home 
 python3 -m elevenlabs_generate \
   --api-key YOUR_API_KEY \
   --voice-id YOUR_VOICE_ID \
-  --model-id eleven_monolingual_v1 \
+  --model-id eleven_multilingual_v2 \
   --language en-US
 ```
 
 The API key can also be set via the `ELEVENLABS_API_KEY` environment variable.
+
+Test your API key without generating:
+
+``` sh
+python3 -m elevenlabs_generate --api-key YOUR_API_KEY --test
+```
 
 Additional options:
 
@@ -118,12 +147,26 @@ Additional options:
 |------|---------|-------------|
 | `--prompts` | `prompts/` | Path to prompts directory |
 | `--output` | `output/` | Path to output directory |
-| `--sample-rate` | `24000` | Audio sample rate |
+| `--sample-rate` | `24000` | Audio sample rate (44100 requires Pro tier) |
 | `--stability` | `0.5` | Voice stability (0.0–1.0) |
 | `--similarity-boost` | `0.75` | Voice similarity boost (0.0–1.0) |
 | `--rate-limit-delay` | `0.5` | Seconds between API calls |
+| `--test` | — | Validate API key and exit |
+| `--debug` | — | Enable debug logging |
 
 Generation is **resumable** — it skips prompts that already have output files. Audio is saved as WAV in the same `output/<language>/` structure used by the recorder, so the existing export pipeline works without changes.
+
+### Configuration (.env)
+
+On first successful API key test, the app saves your configuration to a `.env` file in the project root:
+
+```
+ELEVENLABS_API_KEY=sk_...
+ELEVENLABS_VOICE_ID=your_voice_id
+ELEVENLABS_MODEL_ID=eleven_multilingual_v2
+```
+
+This file is gitignored and auto-loaded when you open the generate page. The CLI also accepts these as environment variables.
 
 
 ## Multi-User Mode
