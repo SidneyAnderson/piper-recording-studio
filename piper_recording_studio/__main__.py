@@ -718,6 +718,61 @@ def main() -> None:
             "last_log": last_log_lines,
         })
 
+    @app.route("/api/training/stats")
+    async def api_training_stats() -> Response:
+        """Read loss values from TensorBoard events files."""
+        lightning_dir = training_dir / "lightning_logs"
+        loss_gen = []
+        loss_disc = []
+
+        if not lightning_dir.exists():
+            return jsonify({"loss_gen": [], "loss_disc": []})
+
+        try:
+            # Find all events files across versions
+            events_files = sorted(lightning_dir.rglob("events.out.tfevents.*"), key=lambda p: p.stat().st_mtime)
+            if not events_files:
+                return jsonify({"loss_gen": [], "loss_disc": []})
+
+            # Use the training venv's python to read TensorBoard events
+            venv_python = piper_dir / "src" / "python" / ".venv" / "bin" / "python3"
+            if not venv_python.exists():
+                return jsonify({"loss_gen": [], "loss_disc": []})
+
+            import subprocess
+            # Read all events files
+            events_paths = [str(f) for f in events_files]
+            script = """
+import json, sys
+from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
+results = {"loss_gen": [], "loss_disc": []}
+for path in sys.argv[1:]:
+    try:
+        ea = EventAccumulator(path)
+        ea.Reload()
+        tags = ea.Tags().get('scalars', [])
+        if 'loss_gen_all' in tags:
+            for s in ea.Scalars('loss_gen_all'):
+                results["loss_gen"].append({"step": s.step, "value": round(s.value, 4)})
+        if 'loss_disc_all' in tags:
+            for s in ea.Scalars('loss_disc_all'):
+                results["loss_disc"].append({"step": s.step, "value": round(s.value, 4)})
+    except Exception:
+        pass
+print(json.dumps(results))
+"""
+            result = subprocess.run(
+                [str(venv_python), "-c", script] + events_paths,
+                capture_output=True, text=True, timeout=30,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                data = json.loads(result.stdout.strip())
+                return jsonify(data)
+        except Exception as exc:
+            _LOGGER.warning("Could not read training stats: %s", exc)
+
+        return jsonify({"loss_gen": [], "loss_disc": []})
+
     @app.route("/api/training/checkpoints")
     async def api_training_checkpoints() -> Response:
         """List available training checkpoints with epoch info."""

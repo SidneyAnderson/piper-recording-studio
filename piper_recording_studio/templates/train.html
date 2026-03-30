@@ -230,9 +230,48 @@
                                 </div>
                             </div>
 
-                            <div id="trainLogCard" class="mt-3" style="display:none;">
-                                <label>Training Log</label>
-                                <div id="trainLog" class="border rounded p-2 bg-dark text-light" style="height: 14em; overflow-y: auto; font-family: monospace; font-size: 0.8em; white-space: pre-wrap;"></div>
+                            <!-- Tabbed Log / Statistics -->
+                            <div id="trainTabsCard" class="mt-3" style="display:none;">
+                                <ul class="nav nav-tabs" role="tablist">
+                                    <li class="nav-item">
+                                        <a class="nav-link active" id="tab-stats" data-tab="stats" href="#" onclick="switchTab('stats'); return false;">Statistics</a>
+                                    </li>
+                                    <li class="nav-item">
+                                        <a class="nav-link" id="tab-log" data-tab="log" href="#" onclick="switchTab('log'); return false;">Log</a>
+                                    </li>
+                                </ul>
+                                <div class="border border-top-0 rounded-bottom p-3">
+                                    <!-- Statistics Tab -->
+                                    <div id="statsPanel">
+                                        <div class="row mb-2">
+                                            <div class="col-md-6">
+                                                <div class="card">
+                                                    <div class="card-body p-2">
+                                                        <h6 class="card-title mb-1" style="font-size:0.85em;">Generator Loss</h6>
+                                                        <canvas id="lossGenChart" height="150"></canvas>
+                                                        <div id="lossGenValue" class="text-muted text-center" style="font-size:0.8em;"></div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-6">
+                                                <div class="card">
+                                                    <div class="card-body p-2">
+                                                        <h6 class="card-title mb-1" style="font-size:0.85em;">Discriminator Loss</h6>
+                                                        <canvas id="lossDiscChart" height="150"></canvas>
+                                                        <div id="lossDiscValue" class="text-muted text-center" style="font-size:0.8em;"></div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <p class="text-muted mb-0" style="font-size:0.8em;">
+                                            Both losses should decrease over time and then plateau. When they flatten out, training is converging. If they start rising, you may be over-training — try testing an earlier checkpoint.
+                                        </p>
+                                    </div>
+                                    <!-- Log Tab -->
+                                    <div id="logPanel" style="display:none;">
+                                        <div id="trainLog" class="border rounded p-2 bg-dark text-light" style="height: 16em; overflow-y: auto; font-family: monospace; font-size: 0.8em; white-space: pre-wrap;"></div>
+                                    </div>
+                                </div>
                             </div>
 
                             <h6 class="mt-3">Batch size by GPU VRAM:</h6>
@@ -247,9 +286,6 @@
                             </table>
                             <p class="text-muted" style="font-size:0.85em;">Larger batch sizes train faster but don't affect final model quality. If you get out-of-memory errors, reduce the batch size.</p>
 
-                            <div class="alert alert-info mt-2">
-                                <strong>Monitor training:</strong> Run <code>tensorboard --logdir training/lightning_logs</code> and visit <code>http://localhost:6006</code>. Watch <code>loss_disc_all</code> — stop when it plateaus (usually 500-1000 epochs).
-                            </div>
                         </div>
                     </div>
 
@@ -308,7 +344,7 @@
                         <div class="card-body">
                             <h5><i class="fas fa-lightbulb"></i> Tips</h5>
                             <ul>
-                                <li><strong>Don't over-train.</strong> More epochs is not always better. Over-fitting causes distorted, robotic output. Monitor TensorBoard.</li>
+                                <li><strong>Don't over-train.</strong> More epochs is not always better. Over-fitting causes distorted, robotic output. Watch the Statistics tab — stop when losses plateau.</li>
                                 <li><strong>Test checkpoints periodically.</strong> Export and listen every ~100 epochs to find the sweet spot.</li>
                                 <li><strong>Your data quality matters most.</strong> Clean, consistent ElevenLabs audio is ideal for training.</li>
                                 <li><strong>Sample rate must match.</strong> Your audio, preprocessing, and checkpoint must all use the same sample rate.</li>
@@ -611,10 +647,101 @@
             let progressInterval = null;
             let trainStartTime = null;
 
+            // --- Tab switching ---
+            function switchTab(tab) {
+                q('#tab-stats').classList.toggle('active', tab === 'stats');
+                q('#tab-log').classList.toggle('active', tab === 'log');
+                q('#statsPanel').style.display = tab === 'stats' ? '' : 'none';
+                q('#logPanel').style.display = tab === 'log' ? '' : 'none';
+                if (tab === 'stats') refreshStats();
+            }
+
+            // --- Simple line chart on canvas ---
+            function drawChart(canvasId, data, color) {
+                const canvas = q('#' + canvasId);
+                const ctx = canvas.getContext('2d');
+                const w = canvas.width = canvas.parentElement.clientWidth - 16;
+                const h = canvas.height = 150;
+                ctx.clearRect(0, 0, w, h);
+
+                if (!data || data.length < 2) {
+                    ctx.fillStyle = '#999';
+                    ctx.font = '12px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('Waiting for data...', w/2, h/2);
+                    return;
+                }
+
+                const values = data.map(d => d.value);
+                const minV = Math.min(...values);
+                const maxV = Math.max(...values);
+                const range = maxV - minV || 1;
+                const pad = 10;
+
+                // Grid lines
+                ctx.strokeStyle = '#e0e0e0';
+                ctx.lineWidth = 0.5;
+                for (let i = 0; i <= 4; i++) {
+                    const y = pad + (h - 2*pad) * (i/4);
+                    ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(w-pad, y); ctx.stroke();
+                }
+
+                // Y-axis labels
+                ctx.fillStyle = '#999';
+                ctx.font = '10px sans-serif';
+                ctx.textAlign = 'right';
+                for (let i = 0; i <= 4; i++) {
+                    const val = maxV - range * (i/4);
+                    const y = pad + (h - 2*pad) * (i/4);
+                    ctx.fillText(val.toFixed(1), pad + 25, y + 3);
+                }
+
+                // Line
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                data.forEach((d, i) => {
+                    const x = pad + 30 + (w - pad*2 - 30) * (i / (data.length - 1));
+                    const y = pad + (h - 2*pad) * (1 - (d.value - minV) / range);
+                    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+                });
+                ctx.stroke();
+            }
+
+            let statsInterval = null;
+
+            async function refreshStats() {
+                try {
+                    const resp = await fetch('/api/training/stats');
+                    const data = await resp.json();
+                    drawChart('lossGenChart', data.loss_gen, '#28a745');
+                    drawChart('lossDiscChart', data.loss_disc, '#007bff');
+
+                    if (data.loss_gen.length > 0) {
+                        const last = data.loss_gen[data.loss_gen.length - 1];
+                        q('#lossGenValue').textContent = `Latest: ${last.value}`;
+                    }
+                    if (data.loss_disc.length > 0) {
+                        const last = data.loss_disc[data.loss_disc.length - 1];
+                        q('#lossDiscValue').textContent = `Latest: ${last.value}`;
+                    }
+                } catch(e) { /* ignore */ }
+            }
+
+            function startStatsPolling() {
+                if (statsInterval) return;
+                refreshStats();
+                statsInterval = setInterval(refreshStats, 15000);
+            }
+
+            function stopStatsPolling() {
+                if (statsInterval) { clearInterval(statsInterval); statsInterval = null; }
+            }
+
             function setTraining(running) {
                 q('#trainStartBtn').style.display = running ? 'none' : '';
                 q('#trainStopBtn').style.display = running ? '' : 'none';
-                q('#trainLogCard').style.display = '';
+                q('#trainTabsCard').style.display = '';
                 q('#trainProgressCard').style.display = '';
                 q('#batchSize').disabled = running;
                 q('#maxEpochs').disabled = running;
@@ -623,8 +750,11 @@
                 if (running) {
                     trainStartTime = trainStartTime || Date.now();
                     startProgressPolling();
+                    startStatsPolling();
                 } else {
                     stopProgressPolling();
+                    stopStatsPolling();
+                    refreshStats(); // Final refresh
                     // Remove animated stripe when done
                     const bar = q('#trainProgressBar');
                     bar.classList.remove('progress-bar-striped', 'progress-bar-animated');
@@ -1066,6 +1196,7 @@
             loadTrainProfiles();
             loadAvailableCheckpoints();
             loadExportedModels();
+            refreshStats();
             checkDataset();
         </script>
     </body>
