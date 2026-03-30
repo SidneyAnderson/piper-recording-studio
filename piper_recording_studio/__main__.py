@@ -20,7 +20,7 @@ from quart import (
     send_from_directory,
 )
 
-from elevenlabs_generate.client import ElevenLabsConfig, synthesize
+from elevenlabs_generate.client import ElevenLabsConfig, synthesize, test_api_key
 
 _LOGGER = logging.getLogger(__name__)
 _DIR = Path(__file__).parent
@@ -278,6 +278,24 @@ def main() -> None:
             "generate.html",
             languages=sorted(languages.items()),
         )
+
+    @app.route("/api/elevenlabs/test", methods=["POST"])
+    async def api_elevenlabs_test() -> Response:
+        """Test an ElevenLabs API key."""
+        data = await request.get_json()
+        api_key = data.get("apiKey", "").strip()
+        if not api_key:
+            return jsonify({"ok": False, "error": "API key is required."}), 400
+        try:
+            async with httpx.AsyncClient() as client:
+                info = await test_api_key(client, api_key)
+            return jsonify({"ok": True, **info})
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 401:
+                return jsonify({"ok": False, "error": "Invalid API key."}), 401
+            return jsonify({"ok": False, "error": f"API error: {exc.response.status_code}"}), 502
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
 
     @app.route("/api/elevenlabs/generate", methods=["POST"])
     async def api_elevenlabs_generate() -> Response:

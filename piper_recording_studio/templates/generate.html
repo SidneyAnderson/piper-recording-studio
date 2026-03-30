@@ -35,7 +35,13 @@
                             <form id="configForm">
                                 <div class="form-group mb-3">
                                     <label for="apiKey">API Key</label>
-                                    <input type="password" class="form-control" id="apiKey" placeholder="ElevenLabs API key" required>
+                                    <div class="input-group">
+                                        <input type="password" class="form-control" id="apiKey" placeholder="ElevenLabs API key" required>
+                                        <button id="testKeyBtn" type="button" class="btn btn-outline-secondary">
+                                            Test Key
+                                        </button>
+                                    </div>
+                                    <div id="testResult" class="mt-1" style="font-size: 0.85em;"></div>
                                 </div>
                                 <div class="form-row mb-3 row">
                                     <div class="col-md-6 mb-3">
@@ -124,6 +130,36 @@
         <script>
             const q = (sel) => document.querySelector(sel);
             let abortController = null;
+
+            q('#testKeyBtn').addEventListener('click', async function() {
+                const apiKey = q('#apiKey').value.trim();
+                const resultEl = q('#testResult');
+                if (!apiKey) {
+                    resultEl.innerHTML = '<span class="text-danger">Please enter an API key.</span>';
+                    return;
+                }
+                resultEl.innerHTML = '<span class="text-muted">Testing...</span>';
+                q('#testKeyBtn').disabled = true;
+                try {
+                    const resp = await fetch('/api/elevenlabs/test', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ apiKey }),
+                    });
+                    const data = await resp.json();
+                    if (data.ok) {
+                        const used = data.character_count.toLocaleString();
+                        const limit = data.character_limit.toLocaleString();
+                        resultEl.innerHTML = `<span class="text-success">&#10003; Valid key — Tier: ${data.tier}, Characters: ${used} / ${limit}</span>`;
+                    } else {
+                        resultEl.innerHTML = `<span class="text-danger">&#10007; ${data.error}</span>`;
+                    }
+                } catch (err) {
+                    resultEl.innerHTML = `<span class="text-danger">&#10007; Connection error: ${err.message}</span>`;
+                } finally {
+                    q('#testKeyBtn').disabled = false;
+                }
+            });
 
             function log(msg, cls = 'info') {
                 const el = q('#log');

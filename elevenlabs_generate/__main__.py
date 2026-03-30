@@ -13,7 +13,7 @@ import httpx
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from piper_recording_studio.__main__ import Prompt, load_prompts
 
-from .client import DEFAULT_MODEL_ID, DEFAULT_SAMPLE_RATE, ElevenLabsConfig, synthesize
+from .client import DEFAULT_MODEL_ID, DEFAULT_SAMPLE_RATE, ElevenLabsConfig, synthesize, test_api_key
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -120,10 +120,12 @@ def main() -> None:
     )
     parser.add_argument("--api-key", default=os.environ.get("ELEVENLABS_API_KEY"),
                         help="ElevenLabs API key (or set ELEVENLABS_API_KEY env var)")
-    parser.add_argument("--voice-id", required=True, help="ElevenLabs voice ID")
+    parser.add_argument("--voice-id", default=None, help="ElevenLabs voice ID")
     parser.add_argument("--model-id", default=DEFAULT_MODEL_ID, help="ElevenLabs model ID")
-    parser.add_argument("--language", required=True,
+    parser.add_argument("--language", default=None,
                         help="Language code to generate (e.g. en-US)")
+    parser.add_argument("--test", action="store_true",
+                        help="Test the API key and exit")
     parser.add_argument("--prompts", default=str(Path(__file__).resolve().parent.parent / "prompts"),
                         help="Path to prompts directory")
     parser.add_argument("--output", default=str(Path(__file__).resolve().parent.parent / "output"),
@@ -146,6 +148,33 @@ def main() -> None:
 
     if not args.api_key:
         _LOGGER.error("API key required. Use --api-key or set ELEVENLABS_API_KEY env var.")
+        sys.exit(1)
+
+    if args.test:
+        async def _test():
+            async with httpx.AsyncClient() as client:
+                info = await test_api_key(client, args.api_key)
+            print(f"API key is valid!")
+            print(f"  Tier:       {info['tier']}")
+            print(f"  Characters: {info['character_count']:,} / {info['character_limit']:,}")
+        try:
+            asyncio.run(_test())
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 401:
+                _LOGGER.error("Invalid API key.")
+            else:
+                _LOGGER.error("API error: %s", exc.response.status_code)
+            sys.exit(1)
+        except Exception as exc:
+            _LOGGER.error("Connection error: %s", exc)
+            sys.exit(1)
+        sys.exit(0)
+
+    if not args.voice_id:
+        _LOGGER.error("--voice-id is required for generation.")
+        sys.exit(1)
+    if not args.language:
+        _LOGGER.error("--language is required for generation.")
         sys.exit(1)
 
     prompts_dir = Path(args.prompts)

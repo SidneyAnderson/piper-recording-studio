@@ -37,6 +37,24 @@ def _pcm_to_wav(pcm_data: bytes, sample_rate: int) -> bytes:
     return buf.getvalue()
 
 
+async def test_api_key(
+    client: httpx.AsyncClient,
+    api_key: str,
+) -> dict:
+    """Validate an API key by hitting /v1/user. Returns user info or raises."""
+    url = f"{ELEVENLABS_BASE_URL}/user"
+    headers = {"xi-api-key": api_key}
+    response = await client.get(url, headers=headers, timeout=15.0)
+    response.raise_for_status()
+    data = response.json()
+    subscription = data.get("subscription", {})
+    return {
+        "character_count": subscription.get("character_count", 0),
+        "character_limit": subscription.get("character_limit", 0),
+        "tier": subscription.get("tier", "unknown"),
+    }
+
+
 async def synthesize(
     client: httpx.AsyncClient,
     config: ElevenLabsConfig,
