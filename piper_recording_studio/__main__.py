@@ -20,7 +20,7 @@ from quart import (
     send_from_directory,
 )
 
-from elevenlabs_generate.client import ElevenLabsConfig, synthesize, test_api_key
+from elevenlabs_generate.client import ElevenLabsConfig, synthesize, test_api_key, get_models, get_voice_info
 
 _LOGGER = logging.getLogger(__name__)
 _DIR = Path(__file__).parent
@@ -308,6 +308,39 @@ def main() -> None:
             "voiceId": config.get("ELEVENLABS_VOICE_ID", ""),
             "modelId": config.get("ELEVENLABS_MODEL_ID", ""),
         })
+
+    @app.route("/api/elevenlabs/models", methods=["POST"])
+    async def api_elevenlabs_models() -> Response:
+        """Fetch available TTS models from ElevenLabs."""
+        data = await request.get_json()
+        api_key = data.get("apiKey", "").strip()
+        if not api_key:
+            return jsonify({"error": "API key is required."}), 400
+        try:
+            async with httpx.AsyncClient() as client:
+                models = await get_models(client, api_key)
+            return jsonify({"models": models})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/elevenlabs/voice-info", methods=["POST"])
+    async def api_elevenlabs_voice_info() -> Response:
+        """Fetch voice details to determine compatible models."""
+        data = await request.get_json()
+        api_key = data.get("apiKey", "").strip()
+        voice_id = data.get("voiceId", "").strip()
+        if not api_key or not voice_id:
+            return jsonify({"error": "API key and voice ID are required."}), 400
+        try:
+            async with httpx.AsyncClient() as client:
+                info = await get_voice_info(client, api_key, voice_id)
+            return jsonify(info)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                return jsonify({"error": "Voice not found. Check the voice ID."}), 404
+            return jsonify({"error": f"API error: {exc.response.status_code}"}), 502
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
 
     @app.route("/api/elevenlabs/test", methods=["POST"])
     async def api_elevenlabs_test() -> Response:

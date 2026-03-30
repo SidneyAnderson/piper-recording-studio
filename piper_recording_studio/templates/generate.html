@@ -47,10 +47,13 @@
                                     <div class="col-md-6 mb-3">
                                         <label for="voiceId">Voice ID</label>
                                         <input type="text" class="form-control" id="voiceId" placeholder="Voice ID" required>
+                                        <div id="voiceStatus" class="mt-1" style="font-size: 0.85em;"></div>
                                     </div>
                                     <div class="col-md-6 mb-3">
                                         <label for="modelId">Model ID</label>
-                                        <input type="text" class="form-control" id="modelId" value="eleven_monolingual_v1" required>
+                                        <select class="form-control" id="modelId" required>
+                                            <option value="">-- Test API key to load models --</option>
+                                        </select>
                                     </div>
                                 </div>
                                 <div class="form-group mb-3">
@@ -150,6 +153,78 @@
         <script>
             const q = (sel) => document.querySelector(sel);
             let abortController = null;
+            let allModels = [];
+            let savedModelId = '';
+
+            function populateModelDropdown(models, compatibleIds, selectModelId) {
+                const sel = q('#modelId');
+                sel.innerHTML = '';
+                if (!models.length) {
+                    sel.innerHTML = '<option value="">-- Test API key to load models --</option>';
+                    return;
+                }
+                // Sort: compatible models first
+                const sorted = [...models].sort((a, b) => {
+                    const aCompat = compatibleIds ? compatibleIds.includes(a.model_id) : false;
+                    const bCompat = compatibleIds ? compatibleIds.includes(b.model_id) : false;
+                    if (aCompat && !bCompat) return -1;
+                    if (!aCompat && bCompat) return 1;
+                    return 0;
+                });
+                sorted.forEach(m => {
+                    const opt = document.createElement('option');
+                    opt.value = m.model_id;
+                    const compat = compatibleIds && compatibleIds.includes(m.model_id);
+                    opt.textContent = m.name + (compat ? ' (recommended)' : '');
+                    sel.appendChild(opt);
+                });
+                if (selectModelId) sel.value = selectModelId;
+            }
+
+            async function fetchModels(apiKey) {
+                try {
+                    const resp = await fetch('/api/elevenlabs/models', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ apiKey }),
+                    });
+                    const data = await resp.json();
+                    if (data.models) {
+                        allModels = data.models;
+                        populateModelDropdown(allModels, null, savedModelId);
+                    }
+                } catch (e) { /* ignore */ }
+            }
+
+            async function lookupVoice() {
+                const apiKey = q('#apiKey').value.trim();
+                const voiceId = q('#voiceId').value.trim();
+                const statusEl = q('#voiceStatus');
+                if (!apiKey || !voiceId) return;
+
+                statusEl.innerHTML = '<span class="text-muted">Looking up voice...</span>';
+                try {
+                    const resp = await fetch('/api/elevenlabs/voice-info', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ apiKey, voiceId }),
+                    });
+                    const data = await resp.json();
+                    if (data.error) {
+                        statusEl.innerHTML = `<span class="text-danger">${data.error}</span>`;
+                        return;
+                    }
+                    statusEl.innerHTML = `<span class="text-success">Voice: ${data.name}</span>`;
+                    if (data.model_ids && data.model_ids.length && allModels.length) {
+                        populateModelDropdown(allModels, data.model_ids, data.model_ids[0]);
+                    }
+                } catch (e) {
+                    statusEl.innerHTML = `<span class="text-danger">Error looking up voice.</span>`;
+                }
+            }
+
+            // Auto-lookup voice when Voice ID field loses focus
+            q('#voiceId').addEventListener('blur', lookupVoice);
 
             // Load saved config on page load
             (async function() {
@@ -158,7 +233,12 @@
                     const data = await resp.json();
                     if (data.apiKey) q('#apiKey').value = data.apiKey;
                     if (data.voiceId) q('#voiceId').value = data.voiceId;
-                    if (data.modelId) q('#modelId').value = data.modelId;
+                    if (data.modelId) savedModelId = data.modelId;
+                    // If we have an API key, fetch models and voice info
+                    if (data.apiKey) {
+                        await fetchModels(data.apiKey);
+                        if (data.voiceId) await lookupVoice();
+                    }
                 } catch (e) { /* ignore */ }
             })();
 
@@ -243,6 +323,10 @@
                         const used = data.character_count.toLocaleString();
                         const limit = data.character_limit.toLocaleString();
                         resultEl.innerHTML = `<span class="text-success">&#10003; Valid key — Tier: ${data.tier}, Characters: ${used} / ${limit}</span>`;
+                        // Fetch models after successful key test
+                        await fetchModels(apiKey);
+                        // Auto-lookup voice if voice ID is filled
+                        if (q('#voiceId').value.trim()) await lookupVoice();
                     } else {
                         resultEl.innerHTML = `<span class="text-danger">&#10007; ${data.error}</span>`;
                     }

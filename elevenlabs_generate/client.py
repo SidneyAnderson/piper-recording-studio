@@ -55,6 +55,45 @@ async def test_api_key(
     }
 
 
+async def get_models(
+    client: httpx.AsyncClient,
+    api_key: str,
+) -> list[dict]:
+    """Fetch available models from /v1/models."""
+    url = f"{ELEVENLABS_BASE_URL}/models"
+    headers = {"xi-api-key": api_key}
+    response = await client.get(url, headers=headers, timeout=15.0)
+    response.raise_for_status()
+    models = response.json()
+    return [
+        {
+            "model_id": m["model_id"],
+            "name": m.get("name", m["model_id"]),
+            "can_do_text_to_speech": m.get("can_do_text_to_speech", False),
+            "languages": [lang.get("language_id", "") for lang in m.get("languages", [])],
+        }
+        for m in models
+        if m.get("can_do_text_to_speech", False)
+    ]
+
+
+async def get_voice_info(
+    client: httpx.AsyncClient,
+    api_key: str,
+    voice_id: str,
+) -> dict:
+    """Fetch voice details including high_quality_base_model_ids."""
+    url = f"{ELEVENLABS_BASE_URL}/voices/{voice_id}"
+    headers = {"xi-api-key": api_key}
+    response = await client.get(url, headers=headers, timeout=15.0)
+    response.raise_for_status()
+    data = response.json()
+    return {
+        "name": data.get("name", ""),
+        "model_ids": data.get("high_quality_base_model_ids", []),
+    }
+
+
 async def synthesize(
     client: httpx.AsyncClient,
     config: ElevenLabsConfig,
