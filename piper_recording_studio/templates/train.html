@@ -136,22 +136,38 @@ python3 -m piper_train.preprocess \
                     </div>
 
                     <!-- Step 5: Train -->
-                    <div class="card mb-3 step-card pending" id="step5">
+                    <div class="card mb-3 step-card active" id="step5">
                         <div class="card-body">
                             <h5><span class="step-num">5</span> Train</h5>
-                            <p>Fine-tune the checkpoint with your dataset. Requires an NVIDIA GPU.</p>
-                            <div class="cmd-block">
-                                <pre>python3 -m piper_train \
-  --dataset-dir {{ training_dir }} \
-  --accelerator gpu \
-  --devices 1 \
-  --batch-size {{ batch_size }} \
-  --validation-split 0.0 \
-  --num-test-examples 0 \
-  --max_epochs 1000 \
-  --resume_from_checkpoint checkpoints/en_US-lessac-medium.ckpt \
-  --checkpoint-epochs 1 \
-  --precision 32</pre>
+                            <p>Fine-tune the checkpoint with your dataset.</p>
+
+                            <div class="row mb-3">
+                                <div class="col-md-4">
+                                    <label for="batchSize">Batch Size</label>
+                                    <input type="number" class="form-control" id="batchSize" value="{{ batch_size }}" min="4" max="128">
+                                </div>
+                                <div class="col-md-4">
+                                    <label for="maxEpochs">Max Epochs</label>
+                                    <input type="number" class="form-control" id="maxEpochs" value="1000" min="100" max="10000">
+                                </div>
+                                <div class="col-md-4">
+                                    <label for="checkpointEpochs">Save Checkpoint Every</label>
+                                    <input type="number" class="form-control" id="checkpointEpochs" value="10" min="1" max="100">
+                                </div>
+                            </div>
+
+                            <button id="trainStartBtn" type="button" class="btn btn-success btn-lg w-100">
+                                <i class="fas fa-play"></i> Start Training
+                            </button>
+                            <button id="trainStopBtn" type="button" class="btn btn-danger btn-lg w-100 mt-2" style="display:none;">
+                                <i class="fas fa-stop"></i> Stop Training
+                            </button>
+
+                            <div id="trainStatus" class="mt-2" style="font-size: 0.9em;"></div>
+
+                            <div id="trainLogCard" class="mt-3" style="display:none;">
+                                <label>Training Log</label>
+                                <div id="trainLog" class="border rounded p-2 bg-dark text-light" style="height: 20em; overflow-y: auto; font-family: monospace; font-size: 0.8em; white-space: pre-wrap;"></div>
                             </div>
 
                             <h6 class="mt-3">Batch size by GPU:</h6>
@@ -160,17 +176,14 @@ python3 -m piper_train.preprocess \
                                 <tbody>
                                     <tr><td>8 GB</td><td>12</td><td>GTX 1080, RTX 3060</td></tr>
                                     <tr><td>10-12 GB</td><td>24</td><td>RTX 3080</td></tr>
-                                    <tr><td>16+ GB</td><td>32</td><td>RTX 4080, A4000</td></tr>
+                                    <tr><td>16 GB</td><td>32</td><td>RTX 4080, A4000</td></tr>
                                     <tr><td>24 GB</td><td>32-48</td><td>RTX 3090/4090</td></tr>
+                                    <tr><td>32 GB</td><td>48-64</td><td>RTX 5090</td></tr>
                                 </tbody>
                             </table>
 
                             <div class="alert alert-info mt-2">
                                 <strong>Monitor training:</strong> Run <code>tensorboard --logdir training/lightning_logs</code> and visit <code>http://localhost:6006</code>. Watch <code>loss_disc_all</code> — stop when it plateaus (usually 500-1000 epochs).
-                            </div>
-
-                            <div class="alert alert-warning">
-                                <strong>Disk space:</strong> Each checkpoint is ~400 MB. With <code>--checkpoint-epochs 1</code> and 1000 epochs, that's ~400 GB. Use <code>--checkpoint-epochs 10</code> to save every 10 epochs, or delete old checkpoints periodically.
                             </div>
                         </div>
                     </div>
@@ -179,18 +192,14 @@ python3 -m piper_train.preprocess \
                     <div class="card mb-3 step-card pending" id="step6">
                         <div class="card-body">
                             <h5><span class="step-num">6</span> Export to ONNX</h5>
-                            <p>Convert your trained checkpoint to a portable .onnx model.</p>
-                            <div class="cmd-block">
-                                <pre>python3 -m piper_train.export_onnx \
-  {{ training_dir }}/lightning_logs/version_0/checkpoints/YOUR_BEST.ckpt \
-  my_voice.onnx
+                            <p>Convert a trained checkpoint to a portable .onnx model.</p>
 
-# IMPORTANT: copy the config file alongside the model
-cp {{ training_dir }}/config.json my_voice.onnx.json</pre>
-                            </div>
-                            <div class="alert alert-warning mt-2">
-                                <strong>Both files are required:</strong> The <code>.onnx</code> model will not work without its <code>.onnx.json</code> config file. Always keep them together.
-                            </div>
+                            <div id="checkpointList" class="mb-3"></div>
+
+                            <button id="exportBtn" type="button" class="btn btn-primary w-100" disabled>
+                                <i class="fas fa-file-export"></i> Export Selected Checkpoint
+                            </button>
+                            <div id="exportStatus" class="mt-2" style="font-size: 0.9em;"></div>
                         </div>
                     </div>
 
@@ -198,16 +207,17 @@ cp {{ training_dir }}/config.json my_voice.onnx.json</pre>
                     <div class="card mb-3 step-card pending" id="step7">
                         <div class="card-body">
                             <h5><span class="step-num">7</span> Test Your Voice</h5>
-                            <div class="cmd-block">
-                                <pre>pip install piper-tts
-
-echo "Hello, this is my custom trained voice!" | \
-  piper -m my_voice.onnx --output_file test.wav
-
-# Play it
-aplay test.wav</pre>
+                            <div class="form-group mb-3">
+                                <label for="testText">Text to speak</label>
+                                <input type="text" class="form-control" id="testText" value="Hello, this is my custom trained voice!">
                             </div>
-                            <p class="text-muted mt-2">You can test checkpoints during training without stopping — just export whichever checkpoint you want to try.</p>
+                            <button id="testVoiceBtn" type="button" class="btn btn-outline-primary" disabled>
+                                <i class="fas fa-volume-up"></i> Test Voice
+                            </button>
+                            <div id="testStatus" class="mt-2" style="font-size: 0.9em;"></div>
+                            <div id="testPlayer" class="mt-2" style="display:none;">
+                                <audio id="testAudio" controls class="w-100"></audio>
+                            </div>
                         </div>
                     </div>
 
@@ -235,6 +245,9 @@ aplay test.wav</pre>
         </div>
 
         <script>
+            const q = (sel) => document.querySelector(sel);
+
+            // --- Dataset status ---
             async function checkDataset() {
                 const statusEl = document.getElementById('datasetStatus');
                 try {
@@ -251,11 +264,196 @@ aplay test.wav</pre>
                     } else if (data.generated > 0) {
                         html += `<br><span class="text-muted"><i class="fas fa-info-circle"></i> Dataset not yet exported. Run Step 1 below.</span>`;
                     }
+                    if (data.preprocessed) {
+                        html += `<br><span class="text-success"><i class="fas fa-check-circle"></i> Dataset preprocessed and ready for training</span>`;
+                    }
+                    if (data.checkpoint_exists) {
+                        html += `<br><span class="text-success"><i class="fas fa-check-circle"></i> Pre-trained checkpoint available</span>`;
+                    }
+                    if (data.training_running) {
+                        html += `<br><span class="text-primary"><i class="fas fa-spinner fa-spin"></i> Training is currently running</span>`;
+                    }
                     statusEl.innerHTML = html;
+
+                    // Update training button state
+                    if (data.training_running) {
+                        setTraining(true);
+                        streamTrainingLog();
+                    }
+
+                    // Load checkpoints
+                    loadCheckpoints();
                 } catch(e) {
                     statusEl.innerHTML = '<span class="text-danger">Could not check status.</span>';
                 }
             }
+
+            // --- Training ---
+            let logAbort = null;
+
+            function setTraining(running) {
+                q('#trainStartBtn').style.display = running ? 'none' : '';
+                q('#trainStopBtn').style.display = running ? '' : 'none';
+                q('#trainLogCard').style.display = '';
+                q('#batchSize').disabled = running;
+                q('#maxEpochs').disabled = running;
+                q('#checkpointEpochs').disabled = running;
+            }
+
+            function appendLog(text) {
+                const el = q('#trainLog');
+                el.textContent += text;
+                el.scrollTop = el.scrollHeight;
+            }
+
+            async function streamTrainingLog() {
+                logAbort = new AbortController();
+                try {
+                    const resp = await fetch('/api/training/log', { signal: logAbort.signal });
+                    const reader = resp.body.getReader();
+                    const decoder = new TextDecoder();
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        const text = decoder.decode(value, { stream: true });
+                        appendLog(text);
+                    }
+                } catch(e) {
+                    if (e.name !== 'AbortError') appendLog('\n[Connection lost]\n');
+                }
+            }
+
+            q('#trainStartBtn').addEventListener('click', async function() {
+                const batchSize = parseInt(q('#batchSize').value);
+                const maxEpochs = parseInt(q('#maxEpochs').value);
+                const checkpointEpochs = parseInt(q('#checkpointEpochs').value);
+
+                q('#trainLog').textContent = '';
+                q('#trainStatus').innerHTML = '<span class="text-muted">Starting training...</span>';
+                setTraining(true);
+
+                try {
+                    const resp = await fetch('/api/training/start', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ batchSize, maxEpochs, checkpointEpochs }),
+                    });
+                    const data = await resp.json();
+                    if (data.ok) {
+                        q('#trainStatus').innerHTML = '<span class="text-success">Training started!</span>';
+                        streamTrainingLog();
+                    } else {
+                        q('#trainStatus').innerHTML = `<span class="text-danger">${data.error}</span>`;
+                        setTraining(false);
+                    }
+                } catch(e) {
+                    q('#trainStatus').innerHTML = `<span class="text-danger">Error: ${e.message}</span>`;
+                    setTraining(false);
+                }
+            });
+
+            q('#trainStopBtn').addEventListener('click', async function() {
+                q('#trainStatus').innerHTML = '<span class="text-muted">Stopping training...</span>';
+                try {
+                    if (logAbort) logAbort.abort();
+                    const resp = await fetch('/api/training/stop', { method: 'POST' });
+                    const data = await resp.json();
+                    q('#trainStatus').innerHTML = `<span class="text-warning">${data.message || 'Training stopped.'}</span>`;
+                } catch(e) {
+                    q('#trainStatus').innerHTML = `<span class="text-danger">Error: ${e.message}</span>`;
+                }
+                setTraining(false);
+                loadCheckpoints();
+            });
+
+            // --- Checkpoints & Export ---
+            let selectedCheckpoint = null;
+
+            async function loadCheckpoints() {
+                try {
+                    const resp = await fetch('/api/training/checkpoints');
+                    const data = await resp.json();
+                    const el = q('#checkpointList');
+                    if (!data.checkpoints || data.checkpoints.length === 0) {
+                        el.innerHTML = '<p class="text-muted">No checkpoints yet. Start training first.</p>';
+                        q('#exportBtn').disabled = true;
+                        q('#testVoiceBtn').disabled = !data.onnx_exists;
+                        return;
+                    }
+                    let html = '<label>Select a checkpoint to export:</label>';
+                    html += '<select id="checkpointSelect" class="form-control">';
+                    data.checkpoints.forEach((c, i) => {
+                        const sel = i === data.checkpoints.length - 1 ? ' selected' : '';
+                        html += `<option value="${c}"${sel}>${c}</option>`;
+                    });
+                    html += '</select>';
+                    if (data.onnx_exists) {
+                        html += '<p class="text-success mt-1" style="font-size:0.85em;"><i class="fas fa-check-circle"></i> Exported model: my_voice.onnx</p>';
+                    }
+                    el.innerHTML = html;
+                    q('#exportBtn').disabled = false;
+                    q('#testVoiceBtn').disabled = !data.onnx_exists;
+                } catch(e) { /* ignore */ }
+            }
+
+            q('#exportBtn').addEventListener('click', async function() {
+                const sel = q('#checkpointSelect');
+                if (!sel) return;
+                const checkpoint = sel.value;
+                const statusEl = q('#exportStatus');
+                statusEl.innerHTML = '<span class="text-muted">Exporting to ONNX...</span>';
+                q('#exportBtn').disabled = true;
+                try {
+                    const resp = await fetch('/api/training/export', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ checkpoint }),
+                    });
+                    const data = await resp.json();
+                    if (data.ok) {
+                        statusEl.innerHTML = `<span class="text-success"><i class="fas fa-check-circle"></i> Exported to ${data.onnx_path}</span>`;
+                        q('#testVoiceBtn').disabled = false;
+                    } else {
+                        statusEl.innerHTML = `<span class="text-danger">${data.error}</span>`;
+                    }
+                } catch(e) {
+                    statusEl.innerHTML = `<span class="text-danger">Error: ${e.message}</span>`;
+                }
+                q('#exportBtn').disabled = false;
+            });
+
+            // --- Test voice ---
+            q('#testVoiceBtn').addEventListener('click', async function() {
+                const text = q('#testText').value.trim();
+                if (!text) return;
+                const statusEl = q('#testStatus');
+                statusEl.innerHTML = '<span class="text-muted">Generating speech...</span>';
+                q('#testVoiceBtn').disabled = true;
+                q('#testPlayer').style.display = 'none';
+                try {
+                    const resp = await fetch('/api/training/test-voice', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ text }),
+                    });
+                    if (!resp.ok) {
+                        const err = await resp.json();
+                        statusEl.innerHTML = `<span class="text-danger">${err.error}</span>`;
+                        return;
+                    }
+                    const blob = await resp.blob();
+                    const url = URL.createObjectURL(blob);
+                    q('#testAudio').src = url;
+                    q('#testPlayer').style.display = '';
+                    q('#testAudio').play();
+                    statusEl.innerHTML = '<span class="text-success">Listen to your voice!</span>';
+                } catch(e) {
+                    statusEl.innerHTML = `<span class="text-danger">Error: ${e.message}</span>`;
+                } finally {
+                    q('#testVoiceBtn').disabled = false;
+                }
+            });
+
             checkDataset();
         </script>
     </body>

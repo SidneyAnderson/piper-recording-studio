@@ -23,5 +23,9 @@ __pycache__/
 *.onnx
 *.onnx.json
 
+# Runtime files
+training.log
+test_voice.wav
+
 # Secrets
 .env

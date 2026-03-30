@@ -305,9 +305,17 @@ def main() -> None:
             batch_size=batch_size,
         )
 
+    # --- Training process management ---
+    training_process = None
+    training_log_path = output_dir.parent / "training.log"
+    piper_dir = output_dir.parent / "piper"
+    training_dir = output_dir.parent / "training"
+    checkpoints_dir = output_dir.parent / "checkpoints"
+
     @app.route("/api/training/status")
     async def api_training_status() -> Response:
         """Check dataset generation and export status."""
+        nonlocal training_process
         generated = 0
         language = ""
         for lang_dir in output_dir.iterdir():
@@ -326,12 +334,220 @@ def main() -> None:
                 exported = sum(1 for _ in open(metadata))
                 export_dir = str(dataset_path)
 
+        preprocessed = (training_dir / "config.json").exists()
+        checkpoint_exists = any(checkpoints_dir.glob("*.ckpt")) if checkpoints_dir.exists() else False
+
+        training_running = training_process is not None and training_process.returncode is None
+
         return jsonify({
             "generated": generated,
             "language": language,
             "exported": exported,
             "export_dir": export_dir,
+            "preprocessed": preprocessed,
+            "checkpoint_exists": checkpoint_exists,
+            "training_running": training_running,
         })
+
+    @app.route("/api/training/start", methods=["POST"])
+    async def api_training_start() -> Response:
+        """Start training as a background process."""
+        nonlocal training_process
+        import subprocess
+
+        if training_process is not None and training_process.returncode is None:
+            return jsonify({"ok": False, "error": "Training is already running."})
+
+        if not (training_dir / "config.json").exists():
+            return jsonify({"ok": False, "error": "Dataset not preprocessed. Run the setup script first."})
+
+        # Find checkpoint
+        checkpoint_file = None
+        if checkpoints_dir.exists():
+            ckpts = sorted(checkpoints_dir.glob("*.ckpt"))
+            if ckpts:
+                checkpoint_file = str(ckpts[0])
+
+        # Check for existing training checkpoints to resume from
+        lightning_ckpt_dir = training_dir / "lightning_logs"
+        resume_ckpt = None
+        if lightning_ckpt_dir.exists():
+            existing = sorted(lightning_ckpt_dir.rglob("*.ckpt"), key=lambda p: p.stat().st_mtime)
+            if existing:
+                resume_ckpt = str(existing[-1])
+
+        data = await request.get_json()
+        batch_size = data.get("batchSize", 48)
+        max_epochs = data.get("maxEpochs", 1000)
+        checkpoint_epochs = data.get("checkpointEpochs", 10)
+
+        venv_python = piper_dir / "src" / "python" / ".venv" / "bin" / "python3"
+        if not venv_python.exists():
+            return jsonify({"ok": False, "error": f"Piper venv not found. Run: bash train/setup_training.sh"})
+
+        cmd = [
+            str(venv_python), "-m", "piper_train",
+            "--dataset-dir", str(training_dir),
+            "--accelerator", "gpu",
+            "--devices", "1",
+            "--batch-size", str(batch_size),
+            "--validation-split", "0.0",
+            "--num-test-examples", "0",
+            "--max_epochs", str(max_epochs),
+            "--checkpoint-epochs", str(checkpoint_epochs),
+            "--precision", "32",
+        ]
+
+        if resume_ckpt:
+            cmd.extend(["--resume_from_checkpoint", resume_ckpt])
+        elif checkpoint_file:
+            cmd.extend(["--resume_from_checkpoint", checkpoint_file])
+
+        _LOGGER.info("Starting training: %s", " ".join(cmd))
+
+        log_file = open(training_log_path, "w")
+        training_process = subprocess.Popen(
+            cmd,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            cwd=str(piper_dir / "src" / "python"),
+        )
+
+        return jsonify({"ok": True, "pid": training_process.pid})
+
+    @app.route("/api/training/stop", methods=["POST"])
+    async def api_training_stop() -> Response:
+        """Stop the training process."""
+        nonlocal training_process
+        import signal
+
+        if training_process is None or training_process.returncode is not None:
+            return jsonify({"message": "Training is not running."})
+
+        training_process.send_signal(signal.SIGINT)
+        try:
+            training_process.wait(timeout=30)
+        except Exception:
+            training_process.kill()
+
+        return jsonify({"message": "Training stopped. Last checkpoint has been saved."})
+
+    @app.route("/api/training/log")
+    async def api_training_log() -> Response:
+        """Stream training log file contents."""
+        async def stream_log():
+            if not training_log_path.exists():
+                yield "Waiting for training to start...\n"
+                return
+
+            last_pos = 0
+            while True:
+                if training_log_path.exists():
+                    with open(training_log_path, "r") as f:
+                        f.seek(last_pos)
+                        new_data = f.read()
+                        if new_data:
+                            last_pos = f.tell()
+                            yield new_data
+
+                # Check if training is still running
+                if training_process is None or training_process.returncode is not None:
+                    # Read any remaining data
+                    if training_log_path.exists():
+                        with open(training_log_path, "r") as f:
+                            f.seek(last_pos)
+                            remaining = f.read()
+                            if remaining:
+                                yield remaining
+                    yield "\n[Training finished]\n"
+                    return
+
+                await asyncio.sleep(1)
+
+        return Response(stream_log(), content_type="text/plain")
+
+    @app.route("/api/training/checkpoints")
+    async def api_training_checkpoints() -> Response:
+        """List available training checkpoints."""
+        checkpoints = []
+        lightning_dir = training_dir / "lightning_logs"
+        if lightning_dir.exists():
+            ckpts = sorted(lightning_dir.rglob("*.ckpt"), key=lambda p: p.stat().st_mtime)
+            checkpoints = [str(c.relative_to(training_dir)) for c in ckpts]
+
+        onnx_path = output_dir.parent / "my_voice.onnx"
+        return jsonify({
+            "checkpoints": checkpoints,
+            "onnx_exists": onnx_path.exists(),
+        })
+
+    @app.route("/api/training/export", methods=["POST"])
+    async def api_training_export() -> Response:
+        """Export a checkpoint to ONNX."""
+        import subprocess
+
+        data = await request.get_json()
+        checkpoint = data.get("checkpoint", "")
+        ckpt_path = training_dir / checkpoint
+
+        if not ckpt_path.exists():
+            return jsonify({"ok": False, "error": f"Checkpoint not found: {checkpoint}"})
+
+        venv_python = piper_dir / "src" / "python" / ".venv" / "bin" / "python3"
+        onnx_path = output_dir.parent / "my_voice.onnx"
+        config_path = training_dir / "config.json"
+
+        try:
+            result = subprocess.run(
+                [str(venv_python), "-m", "piper_train.export_onnx", str(ckpt_path), str(onnx_path)],
+                capture_output=True, text=True, timeout=120,
+                cwd=str(piper_dir / "src" / "python"),
+            )
+            if result.returncode != 0:
+                return jsonify({"ok": False, "error": result.stderr[:500]})
+
+            # Copy config alongside the model
+            import shutil
+            shutil.copy2(str(config_path), str(onnx_path) + ".json")
+
+            return jsonify({"ok": True, "onnx_path": str(onnx_path)})
+        except subprocess.TimeoutExpired:
+            return jsonify({"ok": False, "error": "Export timed out."})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)})
+
+    @app.route("/api/training/test-voice", methods=["POST"])
+    async def api_training_test_voice() -> Response:
+        """Generate speech with the exported ONNX model."""
+        import subprocess
+
+        data = await request.get_json()
+        text = data.get("text", "").strip()
+        if not text:
+            return jsonify({"error": "Text is required."}), 400
+
+        onnx_path = output_dir.parent / "my_voice.onnx"
+        if not onnx_path.exists():
+            return jsonify({"error": "No exported model found. Export a checkpoint first."}), 404
+
+        test_wav = output_dir.parent / "test_voice.wav"
+
+        try:
+            result = subprocess.run(
+                ["piper", "-m", str(onnx_path), "--output_file", str(test_wav)],
+                input=text, capture_output=True, text=True, timeout=30,
+            )
+            if result.returncode != 0:
+                return jsonify({"error": result.stderr[:500]}), 500
+
+            wav_bytes = test_wav.read_bytes()
+            return Response(wav_bytes, content_type="audio/wav")
+        except FileNotFoundError:
+            return jsonify({"error": "piper not installed. Run: pip install piper-tts"}), 500
+        except subprocess.TimeoutExpired:
+            return jsonify({"error": "Voice generation timed out."}), 500
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
 
     env_path = output_dir.parent / ".env"
 
