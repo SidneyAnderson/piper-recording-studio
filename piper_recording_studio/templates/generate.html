@@ -32,6 +32,24 @@
                             <h5 class="card-title">Generate TTS Audio</h5>
                             <p class="text-muted">Send prompts to ElevenLabs and save the returned audio.</p>
 
+                            <div class="form-row mb-3 row">
+                                <div class="col-md-7 mb-2">
+                                    <label for="voiceProfileSelect">Voice Profile</label>
+                                    <select class="form-control" id="voiceProfileSelect">
+                                        <option value="">-- Create new --</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-3 mb-2">
+                                    <label for="voiceProfileName">Profile Name</label>
+                                    <input type="text" class="form-control" id="voiceProfileName" placeholder="e.g. British Narrator">
+                                </div>
+                                <div class="col-md-2 mb-2">
+                                    <label>&nbsp;</label>
+                                    <button id="saveProfileBtn" type="button" class="btn btn-primary w-100">Save</button>
+                                </div>
+                            </div>
+                            <div id="profileStatus" class="mb-3" style="font-size: 0.85em;"></div>
+
                             <form id="configForm">
                                 <div class="form-group mb-3">
                                     <label for="apiKey">API Key</label>
@@ -259,8 +277,75 @@
             // Auto-lookup voice when Voice ID field loses focus
             q('#voiceId').addEventListener('blur', lookupVoice);
 
-            // Load saved config on page load
+            // --- Voice profiles ---
+            async function loadProfiles() {
+                try {
+                    const resp = await fetch('/api/profiles');
+                    const data = await resp.json();
+                    const sel = q('#voiceProfileSelect');
+                    sel.innerHTML = '<option value="">-- Create new --</option>';
+                    (data.profiles || []).forEach(p => {
+                        const opt = document.createElement('option');
+                        opt.value = p.id;
+                        opt.textContent = p.name;
+                        opt.dataset.profile = JSON.stringify(p);
+                        sel.appendChild(opt);
+                    });
+                } catch(e) { /* ignore */ }
+            }
+
+            q('#voiceProfileSelect').addEventListener('change', async function() {
+                const opt = this.options[this.selectedIndex];
+                if (opt.dataset && opt.dataset.profile) {
+                    const p = JSON.parse(opt.dataset.profile);
+                    q('#voiceProfileName').value = p.name || '';
+                    if (p.voice_id) q('#voiceId').value = p.voice_id;
+                    if (p.model_id) savedModelId = p.model_id;
+                    if (p.language && q('#genLanguage')) {
+                        q('#genLanguage').value = p.language;
+                    }
+                    if (p.training_mode) q('#trainingMode').value = p.training_mode;
+                    updateTrainingMode();
+                    // Reload models and voice for the loaded profile
+                    const apiKey = q('#apiKey').value.trim();
+                    if (apiKey) {
+                        await fetchModels(apiKey);
+                        if (p.voice_id) await lookupVoice();
+                    }
+                    q('#profileStatus').innerHTML = `<span class="text-success">Loaded profile: ${p.name}</span>`;
+                } else {
+                    q('#voiceProfileName').value = '';
+                }
+            });
+
+            q('#saveProfileBtn').addEventListener('click', async function() {
+                const name = q('#voiceProfileName').value.trim();
+                const statusEl = q('#profileStatus');
+                if (!name) { statusEl.innerHTML = '<span class="text-danger">Enter a profile name.</span>'; return; }
+
+                const resp = await fetch('/api/profiles', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name,
+                        voiceId: q('#voiceId').value.trim(),
+                        modelId: q('#modelId').value,
+                        language: q('#genLanguage').value,
+                        trainingMode: q('#trainingMode').value,
+                    }),
+                });
+                const data = await resp.json();
+                if (data.ok) {
+                    statusEl.innerHTML = `<span class="text-success">Profile "${name}" saved.</span>`;
+                    loadProfiles();
+                } else {
+                    statusEl.innerHTML = `<span class="text-danger">${data.error}</span>`;
+                }
+            });
+
+            // Load saved config and profiles on page load
             (async function() {
+                await loadProfiles();
                 try {
                     const resp = await fetch('/api/elevenlabs/config');
                     const data = await resp.json();

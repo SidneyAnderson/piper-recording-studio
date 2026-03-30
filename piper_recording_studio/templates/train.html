@@ -38,31 +38,6 @@
             <div class="row justify-content-center">
                 <div class="col-md-10">
 
-                    <!-- Voice Profile -->
-                    <div class="card mb-4">
-                        <div class="card-body">
-                            <h5 class="card-title">Voice Profile</h5>
-                            <p class="text-muted">Name your voice to save settings and track multiple training runs.</p>
-                            <div class="row">
-                                <div class="col-md-6 mb-2">
-                                    <label for="voiceProfileSelect">Select Profile</label>
-                                    <select class="form-control" id="voiceProfileSelect">
-                                        <option value="">-- Create new --</option>
-                                    </select>
-                                </div>
-                                <div class="col-md-4 mb-2">
-                                    <label for="voiceProfileName">Profile Name</label>
-                                    <input type="text" class="form-control" id="voiceProfileName" placeholder="e.g. British Narrator">
-                                </div>
-                                <div class="col-md-2 mb-2">
-                                    <label>&nbsp;</label>
-                                    <button id="saveProfileBtn" type="button" class="btn btn-primary w-100">Save</button>
-                                </div>
-                            </div>
-                            <div id="profileStatus" class="mt-1" style="font-size: 0.85em;"></div>
-                        </div>
-                    </div>
-
                     <!-- Status -->
                     <div class="card mb-4">
                         <div class="card-body">
@@ -331,61 +306,6 @@
                     statusEl.innerHTML = `<span class="text-danger">Error: ${e.message}</span>`;
                 }
             }
-
-            // --- Voice profiles ---
-            async function loadProfiles() {
-                try {
-                    const resp = await fetch('/api/profiles');
-                    const data = await resp.json();
-                    const sel = q('#voiceProfileSelect');
-                    sel.innerHTML = '<option value="">-- Create new --</option>';
-                    (data.profiles || []).forEach(p => {
-                        const opt = document.createElement('option');
-                        opt.value = p.id;
-                        opt.textContent = `${p.name} (${p.language || 'no lang'}, ${p.training_mode || 'finetune'})`;
-                        opt.dataset.profile = JSON.stringify(p);
-                        sel.appendChild(opt);
-                    });
-                } catch(e) { /* ignore */ }
-            }
-
-            q('#voiceProfileSelect').addEventListener('change', function() {
-                const opt = this.options[this.selectedIndex];
-                if (opt.dataset && opt.dataset.profile) {
-                    const p = JSON.parse(opt.dataset.profile);
-                    q('#voiceProfileName').value = p.name || '';
-                    if (p.training_mode) q('#trainMode').value = p.training_mode;
-                    updateTrainMode();
-                } else {
-                    q('#voiceProfileName').value = '';
-                }
-            });
-
-            q('#saveProfileBtn').addEventListener('click', async function() {
-                const name = q('#voiceProfileName').value.trim();
-                const statusEl = q('#profileStatus');
-                if (!name) { statusEl.innerHTML = '<span class="text-danger">Enter a profile name.</span>'; return; }
-
-                const env = await (await fetch('/api/elevenlabs/config')).json();
-                const resp = await fetch('/api/profiles', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        name,
-                        voiceId: env.apiKey ? env.voiceId : '',
-                        modelId: env.apiKey ? env.modelId : '',
-                        language: '{{ language }}',
-                        trainingMode: q('#trainMode').value,
-                    }),
-                });
-                const data = await resp.json();
-                if (data.ok) {
-                    statusEl.innerHTML = `<span class="text-success">Profile "${name}" saved.</span>`;
-                    loadProfiles();
-                } else {
-                    statusEl.innerHTML = `<span class="text-danger">${data.error}</span>`;
-                }
-            });
 
             // --- Training mode auto-detection ---
             function updateTrainMode() {
@@ -837,7 +757,6 @@
                 q('#downloadCkptBtn').disabled = false;
             });
 
-            loadProfiles();
             loadAvailableCheckpoints();
             checkDataset();
         </script>
