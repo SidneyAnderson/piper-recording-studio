@@ -3,6 +3,7 @@ import asyncio
 import csv
 import json
 import logging
+import os
 import sys
 from collections import defaultdict
 from dataclasses import dataclass
@@ -528,20 +529,22 @@ def main() -> None:
         elif train_mode == "finetune" and checkpoint_file:
             ckpt_to_use = checkpoint_file
 
-        # Read checkpoint's current epoch to calculate absolute max_epochs
+        # Read checkpoint's current epoch using the training venv's python (has torch)
         max_epochs = requested_epochs
         if ckpt_to_use:
             try:
-                import pathlib as _pathlib
-                import torch as _torch
-                if hasattr(_torch.serialization, "add_safe_globals"):
-                    _torch.serialization.add_safe_globals([_pathlib.PosixPath, _pathlib.WindowsPath])
-                ckpt_data = _torch.load(ckpt_to_use, map_location="cpu", weights_only=False)
-                ckpt_epoch = ckpt_data.get("epoch", 0)
-                del ckpt_data  # free memory
-                max_epochs = ckpt_epoch + 1 + requested_epochs  # epoch is 0-indexed
-                _LOGGER.info("Checkpoint at epoch %d, will train %d additional epochs (max_epochs=%d)",
-                             ckpt_epoch + 1, requested_epochs, max_epochs)
+                result = subprocess.run(
+                    [str(venv_python), "-c",
+                     f"import torch,pathlib;torch.serialization.add_safe_globals([pathlib.PosixPath,pathlib.WindowsPath]);c=torch.load('{ckpt_to_use}',map_location='cpu',weights_only=False);print(c.get('epoch',0))"],
+                    capture_output=True, text=True, timeout=60,
+                )
+                if result.returncode == 0:
+                    ckpt_epoch = int(result.stdout.strip())
+                    max_epochs = ckpt_epoch + 1 + requested_epochs
+                    _LOGGER.info("Checkpoint at epoch %d, will train %d additional epochs (max_epochs=%d)",
+                                 ckpt_epoch + 1, requested_epochs, max_epochs)
+                else:
+                    _LOGGER.warning("Could not read checkpoint epoch: %s", result.stderr[:200])
             except Exception as exc:
                 _LOGGER.warning("Could not read checkpoint epoch, using max_epochs=%d: %s", max_epochs, exc)
 
@@ -567,11 +570,13 @@ def main() -> None:
         _LOGGER.info("Starting training: %s", " ".join(cmd))
 
         log_file = open(training_log_path, "w")
+        env = dict(os.environ, PYTHONUNBUFFERED="1")
         training_process = subprocess.Popen(
             cmd,
             stdout=log_file,
             stderr=subprocess.STDOUT,
             cwd=str(piper_dir / "src" / "python"),
+            env=env,
         )
 
         return jsonify({"ok": True, "pid": training_process.pid})
