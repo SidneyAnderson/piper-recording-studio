@@ -334,6 +334,10 @@ def main() -> None:
         try:
             async with httpx.AsyncClient() as client:
                 info = await get_voice_info(client, api_key, voice_id)
+            # Save validated voice ID to .env
+            _save_env({"ELEVENLABS_VOICE_ID": voice_id})
+            if info.get("model_ids"):
+                _save_env({"ELEVENLABS_MODEL_ID": info["model_ids"][0]})
             return jsonify(info)
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 404:
@@ -412,6 +416,13 @@ def main() -> None:
             stability=float(data.get("stability", 0.5)),
             similarity_boost=float(data.get("similarityBoost", 0.75)),
         )
+
+        # Persist current config to .env
+        _save_env({
+            "ELEVENLABS_API_KEY": data["apiKey"],
+            "ELEVENLABS_VOICE_ID": data["voiceId"],
+            "ELEVENLABS_MODEL_ID": data["modelId"],
+        })
 
         language_prompts = prompts.get(language, [])
         if not language_prompts:
