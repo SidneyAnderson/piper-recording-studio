@@ -279,9 +279,39 @@ def main() -> None:
             languages=sorted(languages.items()),
         )
 
+    env_path = output_dir.parent / ".env"
+
+    def _load_env() -> dict:
+        """Load key=value pairs from .env file."""
+        config = {}
+        if env_path.exists():
+            for line in env_path.read_text().splitlines():
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, _, value = line.partition("=")
+                    config[key.strip()] = value.strip()
+        return config
+
+    def _save_env(updates: dict) -> None:
+        """Merge updates into .env file, preserving existing keys."""
+        config = _load_env()
+        config.update(updates)
+        lines = [f"{k}={v}" for k, v in config.items()]
+        env_path.write_text("\n".join(lines) + "\n")
+
+    @app.route("/api/elevenlabs/config", methods=["GET"])
+    async def api_elevenlabs_config() -> Response:
+        """Return saved ElevenLabs config from .env."""
+        config = _load_env()
+        return jsonify({
+            "apiKey": config.get("ELEVENLABS_API_KEY", ""),
+            "voiceId": config.get("ELEVENLABS_VOICE_ID", ""),
+            "modelId": config.get("ELEVENLABS_MODEL_ID", ""),
+        })
+
     @app.route("/api/elevenlabs/test", methods=["POST"])
     async def api_elevenlabs_test() -> Response:
-        """Test an ElevenLabs API key."""
+        """Test an ElevenLabs API key and save to .env on success."""
         data = await request.get_json()
         api_key = data.get("apiKey", "").strip()
         if not api_key:
@@ -289,6 +319,15 @@ def main() -> None:
         try:
             async with httpx.AsyncClient() as client:
                 info = await test_api_key(client, api_key)
+            # Save config to .env on success
+            env_updates = {"ELEVENLABS_API_KEY": api_key}
+            voice_id = data.get("voiceId", "").strip()
+            model_id = data.get("modelId", "").strip()
+            if voice_id:
+                env_updates["ELEVENLABS_VOICE_ID"] = voice_id
+            if model_id:
+                env_updates["ELEVENLABS_MODEL_ID"] = model_id
+            _save_env(env_updates)
             return jsonify({"ok": True, **info})
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 401:

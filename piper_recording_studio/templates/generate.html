@@ -131,6 +131,17 @@
             const q = (sel) => document.querySelector(sel);
             let abortController = null;
 
+            // Load saved config on page load
+            (async function() {
+                try {
+                    const resp = await fetch('/api/elevenlabs/config');
+                    const data = await resp.json();
+                    if (data.apiKey) q('#apiKey').value = data.apiKey;
+                    if (data.voiceId) q('#voiceId').value = data.voiceId;
+                    if (data.modelId) q('#modelId').value = data.modelId;
+                } catch (e) { /* ignore */ }
+            })();
+
             q('#testKeyBtn').addEventListener('click', async function() {
                 const apiKey = q('#apiKey').value.trim();
                 const resultEl = q('#testResult');
@@ -144,7 +155,7 @@
                     const resp = await fetch('/api/elevenlabs/test', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ apiKey }),
+                        body: JSON.stringify({ apiKey, voiceId: q('#voiceId').value.trim(), modelId: q('#modelId').value.trim() }),
                     });
                     const text = await resp.text();
                     let data;
