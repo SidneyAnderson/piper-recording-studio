@@ -47,40 +47,30 @@
                     </div>
 
                     <!-- Step 1: Export -->
-                    <div class="card mb-3 step-card" id="step1">
+                    <div class="card mb-3 step-card active" id="step1">
                         <div class="card-body">
                             <h5><span class="step-num">1</span> Export Dataset</h5>
-                            <p>Convert your generated audio to LJSpeech format for training.</p>
-                            <div class="cmd-block">
-                                <pre>python3 -m export_dataset --audio-glob '*.wav' output/{{ language }}/ dataset_{{ language }}/</pre>
-                            </div>
-                            <p class="text-muted mt-2">This trims silence and creates a <code>metadata.csv</code> with audio-text pairs.</p>
-                            <div id="exportStatus"></div>
+                            <p>Convert your generated audio to LJSpeech format for training. Trims silence and creates a <code>metadata.csv</code> with audio-text pairs.</p>
+                            <button id="exportDatasetBtn" type="button" class="btn btn-primary w-100">
+                                <i class="fas fa-file-export"></i> Export Dataset
+                            </button>
+                            <div id="exportDatasetStatus" class="mt-2" style="font-size: 0.9em;"></div>
                         </div>
                     </div>
 
                     <!-- Step 2: Setup -->
-                    <div class="card mb-3 step-card pending" id="step2">
+                    <div class="card mb-3 step-card active" id="step2">
                         <div class="card-body">
                             <h5><span class="step-num">2</span> Set Up Training Environment</h5>
-                            <p>Clone Piper and install the training dependencies.</p>
-                            <div class="cmd-block">
-                                <pre>sudo apt-get install espeak-ng
-
-git clone https://github.com/rhasspy/piper.git
-cd piper/src/python
-
-python3 -m venv .venv
-source .venv/bin/activate
-pip3 install --upgrade pip wheel setuptools
-pip3 install -e .
-bash build_monotonic_align.sh</pre>
+                            <p>Clones Piper, installs dependencies (with pip&lt;24.1 for compatibility), and builds required extensions. This takes several minutes on first run.</p>
+                            <div class="alert alert-warning">
+                                <strong>Prerequisite:</strong> <code>espeak-ng</code> must be installed on the system: <code>sudo apt-get install espeak-ng</code>
                             </div>
-                            <div class="alert alert-info mt-2">
-                                <strong>Or use the setup script:</strong>
-                                <pre class="mb-0 mt-1" style="background: transparent; color: inherit; padding: 5px;">bash train/setup_training.sh</pre>
-                                This automates steps 2-4 in one command.
-                            </div>
+                            <button id="setupBtn" type="button" class="btn btn-primary w-100">
+                                <i class="fas fa-cogs"></i> Run Setup
+                            </button>
+                            <div id="setupStatus" class="mt-2" style="font-size: 0.9em;"></div>
+                            <div id="setupLog" class="mt-2 border rounded p-2 bg-dark text-light" style="height: 12em; overflow-y: auto; font-family: monospace; font-size: 0.75em; white-space: pre-wrap; display: none;"></div>
                         </div>
                     </div>
 
@@ -137,22 +127,15 @@ bash build_monotonic_align.sh</pre>
                     </div>
 
                     <!-- Step 4: Preprocess -->
-                    <div class="card mb-3 step-card pending" id="step4">
+                    <div class="card mb-3 step-card active" id="step4">
                         <div class="card-body">
                             <h5><span class="step-num">4</span> Preprocess Dataset</h5>
-                            <p>Convert your audio and text into training-ready tensors.</p>
-                            <div class="cmd-block">
-                                <pre>cd piper/src/python
-source .venv/bin/activate
-
-python3 -m piper_train.preprocess \
-  --language en \
-  --input-dir {{ dataset_dir }} \
-  --output-dir {{ training_dir }} \
-  --dataset-format ljspeech \
-  --single-speaker \
-  --sample-rate 22050</pre>
-                            </div>
+                            <p>Convert your exported audio and text into training-ready tensors. Uses the Piper environment from Step 2.</p>
+                            <button id="preprocessBtn" type="button" class="btn btn-primary w-100">
+                                <i class="fas fa-microchip"></i> Preprocess Dataset
+                            </button>
+                            <div id="preprocessStatus" class="mt-2" style="font-size: 0.9em;"></div>
+                            <div id="preprocessLog" class="mt-2 border rounded p-2 bg-dark text-light" style="height: 10em; overflow-y: auto; font-family: monospace; font-size: 0.75em; white-space: pre-wrap; display: none;"></div>
                         </div>
                     </div>
 
@@ -267,6 +250,92 @@ python3 -m piper_train.preprocess \
 
         <script>
             const q = (sel) => document.querySelector(sel);
+
+            // Helper to stream SSE responses into a status element and optional log div
+            async function streamSSE(url, options, statusEl, logEl, onDone) {
+                try {
+                    const resp = await fetch(url, options);
+                    const contentType = resp.headers.get('content-type') || '';
+                    if (contentType.includes('application/json')) {
+                        const data = await resp.json();
+                        if (data.ok === false) {
+                            statusEl.innerHTML = `<span class="text-danger">${data.error}</span>`;
+                        }
+                        return;
+                    }
+                    const reader = resp.body.getReader();
+                    const decoder = new TextDecoder();
+                    let buffer = '';
+                    if (logEl) logEl.style.display = '';
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        buffer += decoder.decode(value, { stream: true });
+                        const lines = buffer.split('\n');
+                        buffer = lines.pop();
+                        for (const line of lines) {
+                            if (!line.startsWith('data: ')) continue;
+                            const data = JSON.parse(line.slice(6));
+                            if (data.type === 'progress') {
+                                statusEl.innerHTML = `<span class="text-muted">${data.message}</span>`;
+                                if (logEl) { logEl.textContent += data.message + '\n'; logEl.scrollTop = logEl.scrollHeight; }
+                            } else if (data.type === 'done') {
+                                statusEl.innerHTML = `<span class="text-success"><i class="fas fa-check-circle"></i> ${data.message}</span>`;
+                                if (logEl) { logEl.textContent += data.message + '\n'; logEl.scrollTop = logEl.scrollHeight; }
+                                if (onDone) onDone(data);
+                            } else if (data.type === 'error') {
+                                statusEl.innerHTML = `<span class="text-danger">${data.message}</span>`;
+                                if (logEl) { logEl.textContent += 'ERROR: ' + data.message + '\n'; }
+                            }
+                        }
+                    }
+                } catch(e) {
+                    statusEl.innerHTML = `<span class="text-danger">Error: ${e.message}</span>`;
+                }
+            }
+
+            // --- Step 1: Export Dataset ---
+            q('#exportDatasetBtn').addEventListener('click', async function() {
+                this.disabled = true;
+                const statusEl = q('#exportDatasetStatus');
+                statusEl.innerHTML = '<span class="text-muted">Exporting dataset...</span>';
+                await streamSSE('/api/training/export-dataset', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ language: '{{ language }}' }),
+                }, statusEl, null, () => checkDataset());
+                this.disabled = false;
+            });
+
+            // --- Step 2: Setup ---
+            q('#setupBtn').addEventListener('click', async function() {
+                this.disabled = true;
+                const statusEl = q('#setupStatus');
+                const logEl = q('#setupLog');
+                logEl.textContent = '';
+                statusEl.innerHTML = '<span class="text-muted">Running setup... This may take several minutes.</span>';
+                await streamSSE('/api/training/setup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: '{}',
+                }, statusEl, logEl, () => checkDataset());
+                this.disabled = false;
+            });
+
+            // --- Step 4: Preprocess ---
+            q('#preprocessBtn').addEventListener('click', async function() {
+                this.disabled = true;
+                const statusEl = q('#preprocessStatus');
+                const logEl = q('#preprocessLog');
+                logEl.textContent = '';
+                statusEl.innerHTML = '<span class="text-muted">Preprocessing...</span>';
+                await streamSSE('/api/training/preprocess', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ language: '{{ language }}', sampleRate: 22050 }),
+                }, statusEl, logEl, () => checkDataset());
+                this.disabled = false;
+            });
 
             // --- Dataset status ---
             async function checkDataset() {

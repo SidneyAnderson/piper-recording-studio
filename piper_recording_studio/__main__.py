@@ -3,6 +3,7 @@ import asyncio
 import csv
 import json
 import logging
+import sys
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -312,6 +313,135 @@ def main() -> None:
     piper_dir = output_dir.parent / "piper"
     training_dir = output_dir.parent / "training"
     checkpoints_dir = output_dir.parent / "checkpoints"
+
+    @app.route("/api/training/export-dataset", methods=["POST"])
+    async def api_training_export_dataset() -> Response:
+        """Export audio to LJSpeech format."""
+        import subprocess
+
+        data = await request.get_json()
+        language = data.get("language", "")
+        if not language:
+            return jsonify({"ok": False, "error": "Language is required."})
+
+        input_path = output_dir / language
+        if not input_path.exists():
+            return jsonify({"ok": False, "error": f"No audio found for {language}."})
+
+        dataset_path = output_dir.parent / f"dataset_{language}"
+
+        async def stream():
+            yield f"data: {json.dumps({'type': 'progress', 'message': 'Exporting dataset...'})}\n\n"
+            try:
+                result = subprocess.run(
+                    [sys.executable, "-m", "export_dataset",
+                     "--audio-glob", "*.wav",
+                     str(input_path), str(dataset_path)],
+                    capture_output=True, text=True, timeout=600,
+                    cwd=str(output_dir.parent),
+                )
+                if result.returncode != 0:
+                    yield f"data: {json.dumps({'type': 'error', 'message': result.stderr[:500]})}\n\n"
+                    return
+
+                count = 0
+                metadata = dataset_path / "metadata.csv"
+                if metadata.exists():
+                    count = sum(1 for _ in open(metadata))
+
+                yield f"data: {json.dumps({'type': 'done', 'message': f'Exported {count} samples to {dataset_path}'})}\n\n"
+            except subprocess.TimeoutExpired:
+                yield f"data: {json.dumps({'type': 'error', 'message': 'Export timed out after 10 minutes.'})}\n\n"
+            except Exception as exc:
+                yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+
+        return Response(stream(), content_type="text/event-stream")
+
+    @app.route("/api/training/setup", methods=["POST"])
+    async def api_training_setup() -> Response:
+        """Run the training setup script (clone Piper, install deps)."""
+        import subprocess
+
+        setup_script = output_dir.parent / "train" / "setup_training.sh"
+        if not setup_script.exists():
+            return jsonify({"ok": False, "error": "Setup script not found."})
+
+        async def stream():
+            yield f"data: {json.dumps({'type': 'progress', 'message': 'Running setup... This may take several minutes.'})}\n\n"
+            try:
+                process = subprocess.Popen(
+                    ["bash", str(setup_script), "--skip-checkpoint"],
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    text=True, cwd=str(output_dir.parent),
+                )
+                for line in iter(process.stdout.readline, ""):
+                    line = line.rstrip()
+                    if line:
+                        yield f"data: {json.dumps({'type': 'progress', 'message': line})}\n\n"
+                process.wait()
+                if process.returncode == 0:
+                    yield f"data: {json.dumps({'type': 'done', 'message': 'Setup complete!'})}\n\n"
+                else:
+                    yield f"data: {json.dumps({'type': 'error', 'message': f'Setup failed with exit code {process.returncode}'})}\n\n"
+            except Exception as exc:
+                yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+
+        return Response(stream(), content_type="text/event-stream")
+
+    @app.route("/api/training/preprocess", methods=["POST"])
+    async def api_training_preprocess() -> Response:
+        """Preprocess the exported dataset for training."""
+        import subprocess
+
+        data = await request.get_json()
+        language = data.get("language", "")
+        sample_rate = data.get("sampleRate", 22050)
+
+        dataset_path = output_dir.parent / f"dataset_{language}"
+        if not dataset_path.exists():
+            return jsonify({"ok": False, "error": f"Dataset not exported yet for {language}."})
+
+        venv_python = piper_dir / "src" / "python" / ".venv" / "bin" / "python3"
+        if not venv_python.exists():
+            return jsonify({"ok": False, "error": "Piper not installed. Run Setup first."})
+
+        # Clear old training data if re-preprocessing
+        if training_dir.exists():
+            import shutil
+            shutil.rmtree(training_dir)
+
+        training_dir.mkdir(parents=True, exist_ok=True)
+
+        # Extract language code (e.g., "en" from "en-GB")
+        lang_code = language.split("-")[0] if "-" in language else language
+
+        async def stream():
+            yield f"data: {json.dumps({'type': 'progress', 'message': 'Preprocessing dataset...'})}\n\n"
+            try:
+                process = subprocess.Popen(
+                    [str(venv_python), "-m", "piper_train.preprocess",
+                     "--language", lang_code,
+                     "--input-dir", str(dataset_path),
+                     "--output-dir", str(training_dir),
+                     "--dataset-format", "ljspeech",
+                     "--single-speaker",
+                     "--sample-rate", str(sample_rate)],
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    text=True, cwd=str(piper_dir / "src" / "python"),
+                )
+                for line in iter(process.stdout.readline, ""):
+                    line = line.rstrip()
+                    if line:
+                        yield f"data: {json.dumps({'type': 'progress', 'message': line})}\n\n"
+                process.wait()
+                if process.returncode == 0:
+                    yield f"data: {json.dumps({'type': 'done', 'message': 'Preprocessing complete!'})}\n\n"
+                else:
+                    yield f"data: {json.dumps({'type': 'error', 'message': f'Preprocessing failed with exit code {process.returncode}'})}\n\n"
+            except Exception as exc:
+                yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+
+        return Response(stream(), content_type="text/event-stream")
 
     @app.route("/api/training/status")
     async def api_training_status() -> Response:
