@@ -628,43 +628,88 @@ def main() -> None:
         nonlocal training_process
         if training_process is not None and training_process.returncode is None:
             return True
+        # Check PID file
         pid, _ = _read_training_pid_file()
-        return pid is not None
+        if pid is not None:
+            return True
+        # Check for any piper_train process (catches orphans)
+        try:
+            import subprocess
+            result = subprocess.run(["pgrep", "-f", "piper_train"], capture_output=True)
+            return result.returncode == 0
+        except Exception:
+            return False
 
     @app.route("/api/training/stop", methods=["POST"])
     async def api_training_stop() -> Response:
-        """Stop the training process."""
+        """Stop all training processes."""
         nonlocal training_process
         import signal
+        import subprocess
 
         pid_path = output_dir.parent / "training.pid"
-        pid = None
+        killed = []
 
-        if training_process is not None and training_process.returncode is None:
-            pid = training_process.pid
-        elif pid_path.exists():
-            try:
-                pid = int(pid_path.read_text().strip())
-                os.kill(pid, 0)
-            except (ValueError, ProcessLookupError, PermissionError):
-                pid = None
+        # Find ALL piper_train processes (handles duplicates and orphans)
+        try:
+            result = subprocess.run(
+                ["pgrep", "-f", "piper_train"],
+                capture_output=True, text=True,
+            )
+            pids = [int(p.strip()) for p in result.stdout.strip().split("\n") if p.strip()]
+        except Exception:
+            pids = []
 
-        if pid is None:
+        # Also check PID file
+        pid_from_file, _ = _read_training_pid_file()
+        if pid_from_file and pid_from_file not in pids:
+            pids.append(pid_from_file)
+
+        if not pids:
             return jsonify({"message": "Training is not running."})
 
-        try:
-            os.killpg(os.getpgid(pid), signal.SIGINT)
-        except (ProcessLookupError, PermissionError):
-            pass
+        for pid in pids:
+            try:
+                # Try process group kill first (graceful), then direct
+                try:
+                    os.killpg(os.getpgid(pid), signal.SIGINT)
+                except (ProcessLookupError, PermissionError):
+                    os.kill(pid, signal.SIGINT)
+                killed.append(pid)
+            except (ProcessLookupError, PermissionError):
+                pass
 
+        # Wait for processes to exit
+        import time as _time
+        for _ in range(15):
+            _time.sleep(1)
+            still_running = False
+            for pid in killed:
+                try:
+                    os.kill(pid, 0)
+                    still_running = True
+                except ProcessLookupError:
+                    pass
+            if not still_running:
+                break
+
+        # Force kill any stragglers
+        for pid in killed:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+        # Clean up
         if training_process is not None:
             try:
-                training_process.wait(timeout=30)
+                training_process.wait(timeout=5)
             except Exception:
                 pass
+            training_process = None
         pid_path.unlink(missing_ok=True)
 
-        return jsonify({"message": "Training stopped. Last checkpoint has been saved."})
+        return jsonify({"message": f"Training stopped. Killed {len(killed)} process(es)."})
 
     @app.route("/api/training/log")
     async def api_training_log() -> Response:
