@@ -513,13 +513,41 @@ def main() -> None:
 
         data = await request.get_json()
         batch_size = data.get("batchSize", 32)
-        max_epochs = data.get("maxEpochs", 1000)
+        requested_epochs = data.get("maxEpochs", 1000)
         checkpoint_epochs = data.get("checkpointEpochs", 10)
         train_mode = data.get("trainMode", "finetune")
 
         venv_python = piper_dir / "src" / "python" / ".venv" / "bin" / "python3"
         if not venv_python.exists():
             return jsonify({"ok": False, "error": f"Piper venv not found. Run Setup in Step 2."})
+
+        # Detect checkpoint quality tier and epoch offset
+        ckpt_to_use = None
+        if resume_ckpt:
+            ckpt_to_use = resume_ckpt
+        elif train_mode == "finetune" and checkpoint_file:
+            ckpt_to_use = checkpoint_file
+
+        # Determine absolute max_epochs by detecting checkpoint's current epoch
+        max_epochs = requested_epochs
+        if ckpt_to_use:
+            # Try to extract epoch from filename (e.g. "epoch=499-step=..." or "cori-high-500")
+            import re
+            ckpt_name = Path(ckpt_to_use).stem
+            epoch_match = re.search(r'epoch[=_](\d+)', ckpt_name)
+            if epoch_match:
+                ckpt_epoch = int(epoch_match.group(1)) + 1  # epoch is 0-indexed
+                max_epochs = ckpt_epoch + requested_epochs
+                _LOGGER.info("Checkpoint at epoch %d, will train %d additional epochs (max_epochs=%d)",
+                             ckpt_epoch, requested_epochs, max_epochs)
+            else:
+                # Try number in filename (e.g. "cori-high-500")
+                num_match = re.search(r'(\d+)\.ckpt$', Path(ckpt_to_use).name)
+                if num_match:
+                    ckpt_epoch = int(num_match.group(1))
+                    max_epochs = ckpt_epoch + requested_epochs
+                    _LOGGER.info("Checkpoint at epoch ~%d, will train %d additional epochs (max_epochs=%d)",
+                                 ckpt_epoch, requested_epochs, max_epochs)
 
         cmd = [
             str(venv_python), "-m", "piper_train",
@@ -534,16 +562,8 @@ def main() -> None:
             "--precision", "32",
         ]
 
-        # Detect checkpoint quality tier to set --quality flag
-        ckpt_to_use = None
-        if resume_ckpt:
-            ckpt_to_use = resume_ckpt
-        elif train_mode == "finetune" and checkpoint_file:
-            ckpt_to_use = checkpoint_file
-
         if ckpt_to_use:
             cmd.extend(["--resume_from_checkpoint", ckpt_to_use])
-            # If checkpoint filename contains "high", use high quality architecture
             if "high" in Path(ckpt_to_use).name.lower():
                 cmd.extend(["--quality", "high"])
         # train_mode == "scratch" with no checkpoint: no checkpoint flag = from scratch
