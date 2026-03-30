@@ -655,6 +655,7 @@
             let progressInterval = null;
             let trainStartTime = null;
             let lastCheckpointCount = 0;
+            let trainJustStarted = 0; // Grace period counter to avoid premature "not running" detection
 
             // --- Tab switching ---
             function switchTab(tab) {
@@ -809,10 +810,9 @@
                         loadCheckpoints();
                     }
 
-                    // Use server's start time so elapsed survives page refresh
-                    const serverStart = data.start_time ? data.start_time * 1000 : trainStartTime;
-                    if (serverStart) {
-                        const elapsed = Math.round((Date.now() - serverStart) / 1000);
+                    // Elapsed time calculated on the server to avoid clock mismatch
+                    const elapsed = data.elapsed_seconds || 0;
+                    if (elapsed > 0) {
                         const hrs = Math.floor(elapsed / 3600);
                         const mins = Math.floor((elapsed % 3600) / 60);
                         const secs = elapsed % 60;
@@ -832,12 +832,13 @@
                         q('#trainElapsed').textContent = `Elapsed: ${elapsedStr}${etaStr}`;
                     }
 
-                    if (!data.running && progressInterval) {
+                    if (!data.running && progressInterval && trainJustStarted <= 0) {
                         stopProgressPolling();
                         setTraining(false);
                         q('#trainStatus').innerHTML = '<span class="text-success"><i class="fas fa-check-circle"></i> Training complete!</span>';
                         loadCheckpoints();
                     }
+                    if (trainJustStarted > 0) trainJustStarted--;
 
                     // Refresh checkpoint lists
                     loadCheckpoints();
@@ -885,6 +886,7 @@
                     const data = await resp.json();
                     if (data.ok) {
                         q('#trainStatus').innerHTML = '<span class="text-success">Training started!</span>';
+                        trainJustStarted = 5; // Skip 5 polls before checking if running
                         streamTrainingLog();
                     } else if (data.error && data.error.includes('already running')) {
                         q('#trainStatus').innerHTML = `<span class="text-info">${data.error}</span>`;

@@ -822,8 +822,10 @@ def main() -> None:
             except Exception:
                 pass
 
-        # Get training start time from PID file
+        # Calculate elapsed time on the server (avoids client/server clock mismatch)
+        import time as _time
         _, train_start_time = _read_training_pid_file()
+        elapsed_seconds = int(_time.time() - train_start_time) if train_start_time else 0
 
         return jsonify({
             "running": running,
@@ -832,7 +834,7 @@ def main() -> None:
             "start_epoch": start_epoch,
             "total_checkpoints": total_checkpoints,
             "last_log": last_log_lines,
-            "start_time": train_start_time or 0,
+            "elapsed_seconds": elapsed_seconds,
         })
 
     @app.route("/api/training/stats")
