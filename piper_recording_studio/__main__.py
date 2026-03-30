@@ -631,8 +631,10 @@ def main() -> None:
     def _is_training_running() -> bool:
         """Check if training is running, even across server restarts."""
         nonlocal training_process
-        if training_process is not None and training_process.returncode is None:
-            return True
+        if training_process is not None:
+            training_process.poll()  # Update returncode if process exited
+            if training_process.returncode is None:
+                return True
         # Check PID file
         pid, _ = _read_training_pid_file()
         if pid is not None:
