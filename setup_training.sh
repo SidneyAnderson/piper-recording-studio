@@ -156,7 +156,7 @@ source .venv/bin/activate
 pip3 install "pip>=23.0,<24.1" wheel setuptools -q
 pip3 install -e . -q
 # Pin compatible versions — Piper's deps pull in versions that are too new
-pip3 install "numpy<2" "torchmetrics==0.11.4" six -q
+pip3 install "numpy<2" "torchmetrics==0.11.4" six onnxscript -q
 # Install PyTorch with CUDA 12.8 for modern GPUs (RTX 40xx/50xx)
 pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128 -q
 
@@ -168,11 +168,13 @@ fi
 # Patch Piper to support PyTorch 2.6+ checkpoint loading
 # PyTorch 2.6 defaults torch.load to weights_only=True which rejects
 # pathlib.PosixPath found in older checkpoints
-PIPER_MAIN="piper_train/__main__.py"
-if [ -f "$PIPER_MAIN" ] && ! grep -q "add_safe_globals" "$PIPER_MAIN"; then
-    echo "  Patching Piper for PyTorch 2.6+ checkpoint compatibility..."
-    sed -i '/^import torch$/a import pathlib\nif hasattr(torch.serialization, "add_safe_globals"):\n    torch.serialization.add_safe_globals([pathlib.PosixPath, pathlib.WindowsPath])' "$PIPER_MAIN"
-fi
+# Patch both __main__.py and export_onnx.py for torch.load compatibility
+for PIPER_FILE in "piper_train/__main__.py" "piper_train/export_onnx.py"; do
+    if [ -f "$PIPER_FILE" ] && ! grep -q "add_safe_globals" "$PIPER_FILE"; then
+        echo "  Patching $PIPER_FILE for PyTorch 2.6+ checkpoint compatibility..."
+        sed -i '/^import torch$/a import pathlib\nif hasattr(torch.serialization, "add_safe_globals"):\n    torch.serialization.add_safe_globals([pathlib.PosixPath, pathlib.WindowsPath])' "$PIPER_FILE"
+    fi
+done
 
 # Patch LR scheduler compatibility for PyTorch 2.x + pytorch-lightning 1.7
 LIGHTNING_FILE="piper_train/vits/lightning.py"
@@ -182,6 +184,13 @@ if [ -f "$LIGHTNING_FILE" ] && ! grep -q "lr_scheduler_step" "$LIGHTNING_FILE"; 
 \
     def lr_scheduler_step(self, scheduler, optimizer_idx, metric):\
         scheduler.step()' "$LIGHTNING_FILE"
+fi
+
+# Patch ONNX export to use legacy exporter (PyTorch 2.6+ dynamo is incompatible with VITS)
+EXPORT_FILE="piper_train/export_onnx.py"
+if [ -f "$EXPORT_FILE" ] && ! grep -q "dynamo=False" "$EXPORT_FILE"; then
+    echo "  Patching ONNX export for PyTorch 2.6+ compatibility..."
+    sed -i 's/torch\.onnx\.export(/torch.onnx.export(dynamo=False, /' "$EXPORT_FILE"
 fi
 
 echo "  Piper training environment ready."
