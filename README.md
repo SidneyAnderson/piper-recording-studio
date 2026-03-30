@@ -42,6 +42,12 @@ python3 -m pip install --upgrade pip
 python3 -m pip install -r requirements.txt
 ```
 
+System dependencies:
+
+``` sh
+sudo apt-get install ffmpeg espeak-ng
+```
+
 
 ## Running without Docker
 
@@ -65,25 +71,17 @@ See `--debug` for more options.
 
 ## Exporting
 
-Install ffmpeg:
-
-``` sh
-sudo apt-get install ffmpeg
-```
-
-Install exporting dependencies:
-
-``` sh
-python3 -m pip install -r requirements_export.txt
-```
-
 Export recordings for a language to a Piper-compatible dataset (LJSpeech format):
 
 ``` sh
-python3 -m export_dataset output/<language>/ /path/to/dataset
+# Install export dependencies
+python3 -m pip install -r requirements_export.txt
+
+# Export (use --audio-glob '*.wav' for ElevenLabs-generated audio)
+python3 -m export_dataset --audio-glob '*.wav' output/<language>/ dataset_<language>/
 ```
 
-Requires a non-Docker install. If you used Docker to record your dataset, you may need to adjust the permissions of the output directory:
+If you used Docker to record your dataset, you may need to adjust the permissions of the output directory:
 
 ``` sh
 sudo chown -R "$(id -u):$(id -u)" output/
@@ -173,10 +171,16 @@ This file is gitignored and auto-loaded when you open the generate page. The CLI
 
 After generating audio, use the built-in training guide to create a custom Piper TTS voice.
 
+### Prerequisites
+
+- **NVIDIA GPU** with at least 8 GB VRAM (RTX 5090 with 32 GB is ideal)
+- NVIDIA drivers + CUDA installed
+- System packages: `sudo apt-get install ffmpeg espeak-ng`
+
 ### Quick start
 
 ``` sh
-# 1. Export dataset
+# 1. Export dataset (--audio-glob '*.wav' required for ElevenLabs audio)
 python3 -m export_dataset --audio-glob '*.wav' output/en-GB/ dataset_en-GB/
 
 # 2. Run the automated setup (clones Piper, downloads checkpoint, preprocesses)
@@ -185,15 +189,30 @@ bash train/setup_training.sh
 # 3. Follow the printed instructions to start training
 ```
 
+The setup script handles:
+- Cloning the Piper repo and installing dependencies (with pinned pip<24.1 for compatibility)
+- Downloading the English medium pre-trained checkpoint (~400 MB)
+- Preprocessing your dataset into training-ready tensors
+
 ### Web UI guide
 
-Visit http://localhost:8000/train (or click **Training Guide** on the home page) for a step-by-step walkthrough with commands tailored to your dataset.
+Visit http://localhost:8000/train (or click **Training Guide** on the home page) for a step-by-step walkthrough with commands tailored to your dataset, including GPU batch size recommendations and monitoring tips.
 
 ### Why fine-tune?
 
 With fewer than 5,000 samples, fine-tuning from a pre-trained checkpoint produces significantly better results than training from scratch. The checkpoint provides existing knowledge of speech patterns — training only adapts the voice characteristics.
 
 Pre-trained checkpoints: https://huggingface.co/datasets/rhasspy/piper-checkpoints
+
+### Batch size by GPU
+
+| GPU VRAM | Batch Size | Example GPUs |
+|----------|-----------|--------------|
+| 8 GB | 12 | GTX 1080, RTX 3060 |
+| 10-12 GB | 24 | RTX 3080 |
+| 16 GB | 32 | RTX 4080, A4000 |
+| 24 GB | 32-48 | RTX 3090, RTX 4090 |
+| 32 GB | 48-64 | RTX 5090 |
 
 See [train/README.md](train/README.md) for the complete training guide.
 
