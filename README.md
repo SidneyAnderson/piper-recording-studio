@@ -59,7 +59,7 @@ python3 -m pip install -r requirements.txt
 | Web UI + ElevenLabs | `requirements.txt` | — |
 | Dataset export | `requirements_export.txt` | `ffmpeg` |
 | Training | Installed by `setup_training.sh` | `ffmpeg`, `espeak-ng`, NVIDIA CUDA |
-| Voice testing | `pip install piper-tts` | — |
+| Voice testing | Included in `requirements.txt` | — |
 
 
 ## Running without Docker
@@ -258,7 +258,7 @@ Visit http://localhost:8000/train (or click **Training Guide** on the home page)
 * **Dataset status** — shows generated files, export status, and preprocessing state
 * **Checkpoint browser** — select locale and quality tier from 30+ languages; best checkpoint auto-selected; download with progress streaming
 * **Training launcher** — start/stop training with configurable batch size, epochs, and checkpoint frequency; live progress bar and log streaming
-* **Voice testing** — select any training checkpoint, load it, type text, and listen in the browser to find the best epoch (requires `pip install piper-tts`)
+* **Voice testing** — select any training checkpoint, load it, type text, and listen in the browser to find the best epoch
 * **Model export** — export the best checkpoint as `profile_name.epoch.onnx` to the `models/` directory
 
 ### Selecting a checkpoint
@@ -289,7 +289,6 @@ Training checkpoints are ~400 MB each (high quality: ~1 GB). The web UI defaults
 After exporting a checkpoint to ONNX (via the web UI or CLI), install Piper for inference:
 
 ``` sh
-pip install piper-tts
 echo "Hello, this is my custom voice!" | piper -m models/British_Narrator.510.onnx --output_file test.wav
 ```
 

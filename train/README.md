@@ -187,13 +187,11 @@ Select a training checkpoint and listen to it. Try different epochs to find the 
 
 ### Web UI
 
-Visit http://localhost:8000/train. In Step 6, select a checkpoint from the dropdown, click **Load & Test This Epoch**, type sample text, and click **Play Voice**. Requires `pip install piper-tts`.
+Visit http://localhost:8000/train. In Step 6, select a checkpoint from the dropdown, click **Load & Test This Epoch**, type sample text, and click **Play Voice**.
 
 ### CLI
 
 ```sh
-pip install piper-tts
-
 # Export a checkpoint temporarily for testing
 cd piper/src/python && source .venv/bin/activate
 python3 -m piper_train.export_onnx \
@@ -245,7 +243,7 @@ echo "Hello world!" | piper -m models/British_Narrator.510.onnx --output_file te
 | Out of memory during training | Reduce `--batch-size` |
 | Training loss not decreasing | Check that your audio quality is consistent and clean |
 | Exported model sounds robotic | You may have over-trained — try an earlier checkpoint |
-| `piper` command not found | Run `pip install piper-tts` in your main venv |
+| `piper` command not found | Included in `requirements.txt` — run `pip install -r requirements.txt` |
 | Checkpoint download fails | Checkpoints are public, no auth needed. Check your internet connection. |
 | `espeak-ng` not found | Run `sudo apt-get install espeak-ng` |
 
