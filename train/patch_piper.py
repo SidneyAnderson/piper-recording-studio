@@ -86,12 +86,18 @@ def main():
         def on_train_epoch_end(self, trainer, pl_module):
             epoch = trainer.current_epoch
             if (epoch + 1) % self.every_n_epochs == 0:
-                ckpt_dir = Path(trainer.log_dir) / "checkpoints"
-                ckpt_dir.mkdir(parents=True, exist_ok=True)
-                ckpt_path = ckpt_dir / f"epoch={epoch}-step={trainer.global_step}.ckpt"
-                trainer.save_checkpoint(str(ckpt_path))
-                _LOGGER.debug("Saved checkpoint: %s", ckpt_path)
+                try:
+                    ckpt_dir = Path(trainer.log_dir) / "checkpoints"
+                    ckpt_dir.mkdir(parents=True, exist_ok=True)
+                    ckpt_path = ckpt_dir / f"epoch={epoch}-step={trainer.global_step}.ckpt"
+                    trainer.save_checkpoint(str(ckpt_path))
+                    _LOGGER.info("Saved checkpoint: %s", ckpt_path)
+                except Exception as e:
+                    _LOGGER.error("Failed to save checkpoint at epoch %d: %s", epoch, e)
 
+    # NOTE: Must set in Namespace directly because from_argparse_args gives
+    # Namespace values priority over kwargs, and PL's argparse default is True
+    args.enable_checkpointing = False
     trainer = Trainer.from_argparse_args(args, enable_checkpointing=False)
     if args.checkpoint_epochs is not None:
         trainer.callbacks.append(SimpleCheckpoint(every_n_epochs=args.checkpoint_epochs))

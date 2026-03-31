@@ -657,6 +657,7 @@
             let progressInterval = null;
             let trainStartTime = null;
             let lastCheckpointCount = 0;
+            let currentStartEpoch = 0;  // updated by pollProgress, used by charts
             let trainJustStarted = 0; // Grace period counter to avoid premature "not running" detection
 
             // --- Tab switching ---
@@ -669,11 +670,11 @@
             }
 
             // --- Simple line chart on canvas ---
-            function drawChart(canvasId, data, color) {
+            function drawChart(canvasId, data, color, checkpointEpochs, startEpoch) {
                 const canvas = q('#' + canvasId);
                 const ctx = canvas.getContext('2d');
                 const w = canvas.width = canvas.parentElement.clientWidth - 16;
-                const h = canvas.height = 150;
+                const h = canvas.height = 170;
                 ctx.clearRect(0, 0, w, h);
 
                 if (!data || data.length < 2) {
@@ -688,14 +689,24 @@
                 const minV = Math.min(...values);
                 const maxV = Math.max(...values);
                 const range = maxV - minV || 1;
-                const pad = 10;
+                const padTop = 10;
+                const padBottom = 28; // room for x-axis labels
+                const padLeft = 40;
+                const padRight = 10;
+                const plotW = w - padLeft - padRight;
+                const plotH = h - padTop - padBottom;
+
+                // Helper: data index -> x coordinate
+                const xOf = (i) => padLeft + plotW * (i / (data.length - 1));
+                // Helper: value -> y coordinate
+                const yOf = (v) => padTop + plotH * (1 - (v - minV) / range);
 
                 // Grid lines
                 ctx.strokeStyle = '#e0e0e0';
                 ctx.lineWidth = 0.5;
                 for (let i = 0; i <= 4; i++) {
-                    const y = pad + (h - 2*pad) * (i/4);
-                    ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(w-pad, y); ctx.stroke();
+                    const y = padTop + plotH * (i/4);
+                    ctx.beginPath(); ctx.moveTo(padLeft, y); ctx.lineTo(w - padRight, y); ctx.stroke();
                 }
 
                 // Y-axis labels
@@ -704,20 +715,59 @@
                 ctx.textAlign = 'right';
                 for (let i = 0; i <= 4; i++) {
                     const val = maxV - range * (i/4);
-                    const y = pad + (h - 2*pad) * (i/4);
-                    ctx.fillText(val.toFixed(1), pad + 25, y + 3);
+                    const y = padTop + plotH * (i/4);
+                    ctx.fillText(val.toFixed(1), padLeft - 4, y + 3);
                 }
 
-                // Line
+                // Build epoch list from data for x-axis
+                const epochs = data.map(d => d.epoch != null ? d.epoch : null);
+                const userEpoch = (e) => e != null && startEpoch != null ? e - startEpoch + 1 : e;
+
+                // Checkpoint marker vertical lines
+                if (checkpointEpochs && checkpointEpochs.length > 0) {
+                    ctx.strokeStyle = 'rgba(220, 53, 69, 0.25)';
+                    ctx.lineWidth = 1;
+                    ctx.setLineDash([3, 3]);
+                    for (const ckEpoch of checkpointEpochs) {
+                        // Find closest data point matching this epoch
+                        const idx = data.findIndex(d => d.epoch != null && d.epoch >= ckEpoch);
+                        if (idx >= 0) {
+                            const x = xOf(idx);
+                            ctx.beginPath(); ctx.moveTo(x, padTop); ctx.lineTo(x, padTop + plotH); ctx.stroke();
+                            // Checkpoint label at top
+                            ctx.fillStyle = 'rgba(220, 53, 69, 0.7)';
+                            ctx.font = '9px sans-serif';
+                            ctx.textAlign = 'center';
+                            ctx.fillText('💾' + userEpoch(ckEpoch), x, padTop - 1);
+                        }
+                    }
+                    ctx.setLineDash([]);
+                }
+
+                // Data line
                 ctx.strokeStyle = color;
                 ctx.lineWidth = 1.5;
                 ctx.beginPath();
                 data.forEach((d, i) => {
-                    const x = pad + 30 + (w - pad*2 - 30) * (i / (data.length - 1));
-                    const y = pad + (h - 2*pad) * (1 - (d.value - minV) / range);
+                    const x = xOf(i);
+                    const y = yOf(d.value);
                     if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
                 });
                 ctx.stroke();
+
+                // X-axis epoch labels (show ~5-8 evenly spaced)
+                const labelCount = Math.min(data.length, 7);
+                ctx.fillStyle = '#999';
+                ctx.font = '9px sans-serif';
+                ctx.textAlign = 'center';
+                for (let i = 0; i < labelCount; i++) {
+                    const idx = Math.round(i * (data.length - 1) / (labelCount - 1));
+                    const ep = epochs[idx];
+                    if (ep != null) {
+                        const x = xOf(idx);
+                        ctx.fillText('ep ' + userEpoch(ep), x, padTop + plotH + 14);
+                    }
+                }
             }
 
             let statsInterval = null;
@@ -726,16 +776,19 @@
                 try {
                     const resp = await fetch('/api/training/stats');
                     const data = await resp.json();
-                    drawChart('lossGenChart', data.loss_gen, '#28a745');
-                    drawChart('lossDiscChart', data.loss_disc, '#007bff');
+                    const ckEpochs = data.checkpoint_epochs || [];
+                    drawChart('lossGenChart', data.loss_gen, '#28a745', ckEpochs, currentStartEpoch);
+                    drawChart('lossDiscChart', data.loss_disc, '#007bff', ckEpochs, currentStartEpoch);
 
                     if (data.loss_gen.length > 0) {
                         const last = data.loss_gen[data.loss_gen.length - 1];
-                        q('#lossGenValue').textContent = `Latest: ${last.value}`;
+                        const ep = last.epoch != null ? ` (ep ${last.epoch - currentStartEpoch + 1})` : '';
+                        q('#lossGenValue').textContent = `Latest: ${last.value}${ep}`;
                     }
                     if (data.loss_disc.length > 0) {
                         const last = data.loss_disc[data.loss_disc.length - 1];
-                        q('#lossDiscValue').textContent = `Latest: ${last.value}`;
+                        const ep = last.epoch != null ? ` (ep ${last.epoch - currentStartEpoch + 1})` : '';
+                        q('#lossDiscValue').textContent = `Latest: ${last.value}${ep}`;
                     }
                 } catch(e) { /* ignore */ }
             }
@@ -793,6 +846,7 @@
 
                     const maxEpochs = parseInt(q('#maxEpochs').value) || 1000;
                     const startEpoch = data.start_epoch || 0;
+                    currentStartEpoch = startEpoch;
                     const currentEpoch = data.estimated_epoch || data.latest_epoch;
                     let done = 0;
 

@@ -866,20 +866,28 @@ def main() -> None:
             script = """
 import json, sys
 from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
-results = {"loss_gen": [], "loss_disc": []}
+results = {"loss_gen": [], "loss_disc": [], "epochs": {}}
 for path in sys.argv[1:]:
     try:
-        ea = EventAccumulator(path)
+        ea = EventAccumulator(path, size_guidance={'scalars': 0})
         ea.Reload()
         tags = ea.Tags().get('scalars', [])
+        # Build step->epoch mapping
+        if 'epoch' in tags:
+            for s in ea.Scalars('epoch'):
+                results["epochs"][str(s.step)] = int(s.value)
         if 'loss_gen_all' in tags:
             for s in ea.Scalars('loss_gen_all'):
-                results["loss_gen"].append({"step": s.step, "value": round(s.value, 4)})
+                epoch = results["epochs"].get(str(s.step))
+                results["loss_gen"].append({"step": s.step, "value": round(s.value, 4), "epoch": epoch})
         if 'loss_disc_all' in tags:
             for s in ea.Scalars('loss_disc_all'):
-                results["loss_disc"].append({"step": s.step, "value": round(s.value, 4)})
+                epoch = results["epochs"].get(str(s.step))
+                results["loss_disc"].append({"step": s.step, "value": round(s.value, 4), "epoch": epoch})
     except Exception:
         pass
+# Don't send the raw epochs mapping to frontend
+del results["epochs"]
 print(json.dumps(results))
 """
             result = subprocess.run(
@@ -888,6 +896,15 @@ print(json.dumps(results))
             )
             if result.returncode == 0 and result.stdout.strip():
                 data = json.loads(result.stdout.strip())
+                # Add checkpoint epochs so the chart can draw markers
+                import re as _re
+                ckpt_epochs = []
+                if lightning_dir.exists():
+                    for ckpt in sorted(lightning_dir.rglob("*.ckpt"), key=lambda p: p.stat().st_mtime):
+                        m = _re.search(r'epoch=(\d+)', ckpt.name)
+                        if m:
+                            ckpt_epochs.append(int(m.group(1)))
+                data["checkpoint_epochs"] = ckpt_epochs
                 return jsonify(data)
         except Exception as exc:
             _LOGGER.warning("Could not read training stats: %s", exc)
