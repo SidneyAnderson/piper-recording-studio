@@ -166,9 +166,9 @@ if [ -f "build_monotonic_align.sh" ]; then
 fi
 
 # Apply PyTorch 2.x compatibility patches:
-# - Manual optimization for multi-optimizer training (generator + discriminator)
 # - Custom checkpoint callback (replaces broken ModelCheckpoint)
 # - Safe globals for checkpoint loading (PyTorch 2.6+)
+# - LR scheduler step override (PyTorch 2.x API change)
 # - Legacy ONNX exporter (PyTorch 2.6+ dynamo fix)
 echo "  Applying PyTorch 2.x compatibility patches..."
 python3 "$PROJECT_DIR/train/patch_piper.py"

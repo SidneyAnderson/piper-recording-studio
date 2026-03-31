@@ -1,6 +1,17 @@
-# Piper Recording Studio
+# Piper Recording Studio (ElevenLabs Fork)
 
-Local tool for recording yourself to train a [Piper text to speech](https://github.com/rhasspy/piper) voice.
+A fork of [rhasspy/piper-recording-studio](https://github.com/rhasspy/piper-recording-studio) extended with ElevenLabs TTS integration, a phonetically diverse prompt generator, a full training pipeline web UI, voice profiles, and a checkpoint browser.
+
+**Fork:** [SidneyAnderson/piper-recording-studio](https://github.com/SidneyAnderson/piper-recording-studio) (branch: `elevenlabs-integration`)
+
+### What this fork adds
+
+- **ElevenLabs TTS generation** — generate training audio from prompts via the ElevenLabs API (web UI and CLI)
+- **Prompt generator** — create 12,000+ phonetically diverse training sentences across 18 topic categories
+- **Full training pipeline** — browser-based workflow: generate audio, export dataset, download checkpoint, preprocess, train, test, export ONNX
+- **Voice profiles** — save and load ElevenLabs voice configurations
+- **Checkpoint browser** — browse and download pre-trained checkpoints for 30+ languages by locale and quality tier
+- **Training charts** — live Generator/Discriminator loss charts with epoch labels and checkpoint markers
 
 ![Screen shot](etc/screenshot.jpg)
 
@@ -9,7 +20,7 @@ Local tool for recording yourself to train a [Piper text to speech](https://gith
 
 ## Tutorial
 
-See a [video tutorial](https://www.youtube.com/watch?v=Z1pptxLT_3I) by [Thorsten Müller](https://www.thorsten-voice.de/)
+See a [video tutorial](https://www.youtube.com/watch?v=Z1pptxLT_3I) by [Thorsten Müller](https://www.thorsten-voice.de/) for the original recording studio
 
 
 ## Docker
@@ -43,7 +54,7 @@ sudo apt-get install ffmpeg espeak-ng
 ### Python environment
 
 ``` sh
-git clone https://github.com/rhasspy/piper-recording-studio.git
+git clone https://github.com/SidneyAnderson/piper-recording-studio.git -b elevenlabs-integration
 cd piper-recording-studio/
 
 python3 -m venv .venv
@@ -249,7 +260,7 @@ python3 -m piper_recording_studio
 The setup script handles:
 - Cloning the Piper repo and installing dependencies (with pinned pip<24.1 for compatibility)
 - Installing PyTorch with CUDA 12.8 for modern GPUs (RTX 40xx/50xx)
-- Applying PyTorch 2.x compatibility patches (manual optimization, checkpoint saving, ONNX export)
+- Applying PyTorch 2.x compatibility patches (checkpoint saving, ONNX export, LR scheduler)
 - Downloading a pre-trained checkpoint from HuggingFace (no auth required)
 - Preprocessing your dataset into training-ready tensors
 
@@ -302,7 +313,7 @@ Training checkpoints are ~400 MB each (high quality: ~1 GB). With save every 25 
 ### PyTorch 2.x compatibility
 
 Piper's training code was designed for PyTorch 1.x. The setup script automatically applies patches for PyTorch 2.x compatibility:
-- Manual optimization for multi-optimizer training (generator + discriminator)
+- Automatic optimization for multi-optimizer training (generator + discriminator)
 - Custom checkpoint callback (replaces broken ModelCheckpoint)
 - Safe globals for checkpoint loading (PyTorch 2.6+)
 - Legacy ONNX exporter (PyTorch 2.6+ dynamo fix)
