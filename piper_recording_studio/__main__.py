@@ -607,26 +607,44 @@ def main() -> None:
             start_new_session=True,
         )
 
-        # Save PID and start time so we can track training across server restarts
+        # Save PID, start time, and training metadata so we can track
+        # training across server restarts.  The progress endpoint reads
+        # requested_epochs and start_epoch to display user-friendly numbers.
         import time as _time
+        ckpt_base_epoch = max_epochs - requested_epochs  # internal epoch where fine-tuning starts
         pid_path = output_dir.parent / "training.pid"
-        pid_path.write_text(f"{training_process.pid}\n{_time.time()}")
+        pid_path.write_text(
+            f"{training_process.pid}\n"
+            f"{_time.time()}\n"
+            f"{requested_epochs}\n"
+            f"{ckpt_base_epoch}\n"
+            f"{max_epochs}"
+        )
 
         return jsonify({"ok": True, "pid": training_process.pid})
 
-    def _read_training_pid_file() -> tuple:
-        """Read PID and start time from training.pid file. Returns (pid, start_time) or (None, None)."""
+    def _read_training_pid_file() -> dict:
+        """Read PID, start time, and training metadata from training.pid file.
+
+        Returns dict with keys: pid, start_time, requested_epochs,
+        ckpt_base_epoch, max_epochs.  Missing values default to None/0.
+        """
         pid_path = output_dir.parent / "training.pid"
+        result = {"pid": None, "start_time": None, "requested_epochs": None,
+                  "ckpt_base_epoch": 0, "max_epochs": None}
         if pid_path.exists():
             try:
                 lines = pid_path.read_text().strip().split("\n")
                 pid = int(lines[0])
-                start_time = float(lines[1]) if len(lines) > 1 else 0
                 os.kill(pid, 0)  # Check if process exists
-                return pid, start_time
+                result["pid"] = pid
+                result["start_time"] = float(lines[1]) if len(lines) > 1 else 0
+                result["requested_epochs"] = int(lines[2]) if len(lines) > 2 else None
+                result["ckpt_base_epoch"] = int(lines[3]) if len(lines) > 3 else 0
+                result["max_epochs"] = int(lines[4]) if len(lines) > 4 else None
             except (ValueError, ProcessLookupError, PermissionError, IndexError):
                 pid_path.unlink(missing_ok=True)
-        return None, None
+        return result
 
     def _is_training_running() -> bool:
         """Check if training is running, even across server restarts."""
@@ -636,8 +654,8 @@ def main() -> None:
             if training_process.returncode is None:
                 return True
         # Check PID file
-        pid, _ = _read_training_pid_file()
-        if pid is not None:
+        pid_info = _read_training_pid_file()
+        if pid_info["pid"] is not None:
             return True
         # Check for any piper_train process (catches orphans)
         try:
@@ -668,7 +686,7 @@ def main() -> None:
             pids = []
 
         # Also check PID file
-        pid_from_file, _ = _read_training_pid_file()
+        pid_from_file = _read_training_pid_file()["pid"]
         if pid_from_file and pid_from_file not in pids:
             pids.append(pid_from_file)
 
@@ -794,25 +812,35 @@ def main() -> None:
         else:
             start_epoch = 0
 
-        # Also estimate current epoch from events file modification time
-        # Each epoch takes ~7s, so we can estimate epochs since last checkpoint
+        # Estimate current epoch from TensorBoard events (more accurate than
+        # guessing from checkpoint file mtimes).  Falls back to latest_epoch
+        # from checkpoint filenames when events aren't available yet.
         estimated_epoch = latest_epoch
-        if latest_epoch is not None and running:
-            # Find the latest events file
-            events_files = sorted(lightning_dir.rglob("events.out.tfevents.*"), key=lambda p: p.stat().st_mtime)
-            if events_files:
-                latest_events_mtime = events_files[-1].stat().st_mtime
-                # Find the latest checkpoint mtime
-                latest_ckpt_files = sorted(lightning_dir.rglob("*.ckpt"), key=lambda p: p.stat().st_mtime)
-                if latest_ckpt_files:
-                    latest_ckpt_mtime = latest_ckpt_files[-1].stat().st_mtime
-                    # If events file is newer than last checkpoint, estimate additional epochs
-                    if latest_events_mtime > latest_ckpt_mtime:
-                        import time
-                        seconds_since_ckpt = time.time() - latest_ckpt_mtime
-                        # Rough estimate: ~7 seconds per epoch for high quality
-                        estimated_extra = int(seconds_since_ckpt / 7)
-                        estimated_epoch = latest_epoch + estimated_extra
+        if running and lightning_dir.exists():
+            try:
+                import subprocess as _sp
+                venv_py = piper_dir / "src" / "python" / ".venv" / "bin" / "python3"
+                events_files = sorted(lightning_dir.rglob("events.out.tfevents.*"),
+                                      key=lambda p: p.stat().st_mtime)
+                if events_files and venv_py.exists():
+                    script = (
+                        "import sys\n"
+                        "from tensorboard.backend.event_processing.event_accumulator import EventAccumulator\n"
+                        "ea = EventAccumulator(sys.argv[1], size_guidance={'scalars': 0})\n"
+                        "ea.Reload()\n"
+                        "eps = ea.Scalars('epoch') if 'epoch' in ea.Tags().get('scalars',[]) else []\n"
+                        "print(int(eps[-1].value) if eps else '')\n"
+                    )
+                    result = _sp.run(
+                        [str(venv_py), "-c", script, str(events_files[-1].parent)],
+                        capture_output=True, text=True, timeout=10,
+                    )
+                    if result.returncode == 0 and result.stdout.strip():
+                        tb_epoch = int(result.stdout.strip())
+                        if latest_epoch is None or tb_epoch > latest_epoch:
+                            estimated_epoch = tb_epoch
+            except Exception:
+                pass  # Fall back to latest_epoch from checkpoint filenames
 
         # Read last few lines of log for recent activity
         last_log_lines = []
@@ -824,16 +852,28 @@ def main() -> None:
             except Exception:
                 pass
 
-        # Calculate elapsed time on the server (avoids client/server clock mismatch)
+        # Read training metadata from PID file
         import time as _time
-        _, train_start_time = _read_training_pid_file()
+        pid_info = _read_training_pid_file()
+        train_start_time = pid_info["start_time"]
         elapsed_seconds = int(_time.time() - train_start_time) if train_start_time else 0
+
+        # Use metadata from PID file for accurate progress display.
+        # ckpt_base_epoch is the internal epoch where fine-tuning started
+        # (e.g. 500 when resuming from a checkpoint at epoch 500).
+        # requested_epochs is how many epochs the user asked for (e.g. 500).
+        ckpt_base_epoch = pid_info["ckpt_base_epoch"] or start_epoch
+        requested_epochs = pid_info["requested_epochs"]
+        server_max_epochs = pid_info["max_epochs"]
 
         return jsonify({
             "running": running,
             "latest_epoch": latest_epoch,
             "estimated_epoch": estimated_epoch,
             "start_epoch": start_epoch,
+            "ckpt_base_epoch": ckpt_base_epoch,
+            "requested_epochs": requested_epochs,
+            "server_max_epochs": server_max_epochs,
             "total_checkpoints": total_checkpoints,
             "last_log": last_log_lines,
             "elapsed_seconds": elapsed_seconds,
