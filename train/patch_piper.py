@@ -3,15 +3,14 @@
 
 Applies the following patches:
 1. torch.load safe_globals for checkpoint loading (PyTorch 2.6+)
-2. Manual optimization in VitsModel (PyTorch 2.x multi-optimizer fix)
-3. Custom SimpleCheckpoint callback (replaces broken ModelCheckpoint)
+2. LR scheduler step override (PyTorch 2.x API change)
+3. Custom SimpleCheckpoint callback + disable default ModelCheckpoint
 4. ONNX export legacy exporter (PyTorch 2.6+ dynamo fix)
 
 Run from the piper/src/python directory:
     python3 ../../train/patch_piper.py
 """
 
-import re
 import sys
 from pathlib import Path
 
@@ -46,7 +45,6 @@ def main():
     # Determine piper python directory
     piper_dir = Path.cwd()
     if not (piper_dir / "piper_train" / "__main__.py").exists():
-        # Try to find it
         for candidate in [
             Path(__file__).parent.parent / "piper" / "src" / "python",
             Path.cwd() / "piper" / "src" / "python",
@@ -60,7 +58,7 @@ def main():
 
     print(f"Patching Piper in: {piper_dir}")
 
-    # 1. Patch __main__.py — safe_globals + SimpleCheckpoint
+    # 1. Patch __main__.py — safe_globals + SimpleCheckpoint + disable default checkpointing
     main_py = piper_dir / "piper_train" / "__main__.py"
     patch_file(main_py, [
         # Add safe_globals for torch.load
@@ -68,7 +66,7 @@ def main():
             "import torch\n",
             "import torch\nimport pathlib\nif hasattr(torch.serialization, 'add_safe_globals'):\n    torch.serialization.add_safe_globals([pathlib.PosixPath, pathlib.WindowsPath])\n",
         ),
-        # Replace ModelCheckpoint with SimpleCheckpoint
+        # Replace ModelCheckpoint with SimpleCheckpoint and disable default checkpointing
         (
             """    trainer = Trainer.from_argparse_args(args)
     if args.checkpoint_epochs is not None:
@@ -76,7 +74,9 @@ def main():
         _LOGGER.debug(
             "Checkpoints will be saved every %s epoch(s)", args.checkpoint_epochs
         )""",
-            """    # Custom checkpoint callback compatible with PyTorch 2.x + PL 1.7
+            """    # Custom checkpoint callback — PL's default ModelCheckpoint (save_top_k=1)
+    # deletes old checkpoints, preventing epoch comparison. SimpleCheckpoint
+    # keeps all checkpoints. enable_checkpointing=False disables the default.
     from pytorch_lightning.callbacks import Callback
     class SimpleCheckpoint(Callback):
         def __init__(self, every_n_epochs=10):
@@ -92,99 +92,24 @@ def main():
                 trainer.save_checkpoint(str(ckpt_path))
                 _LOGGER.debug("Saved checkpoint: %s", ckpt_path)
 
-    trainer = Trainer.from_argparse_args(args)
+    trainer = Trainer.from_argparse_args(args, enable_checkpointing=False)
     if args.checkpoint_epochs is not None:
         trainer.callbacks.append(SimpleCheckpoint(every_n_epochs=args.checkpoint_epochs))
         _LOGGER.debug(
             "Checkpoints will be saved every %s epoch(s)", args.checkpoint_epochs
         )""",
         ),
-    ], "safe_globals + SimpleCheckpoint")
+    ], "safe_globals + SimpleCheckpoint + disable default checkpointing")
 
-    # 2. Patch lightning.py — manual optimization
+    # 2. Patch lightning.py — LR scheduler step override
     lightning_py = piper_dir / "piper_train" / "vits" / "lightning.py"
     patch_file(lightning_py, [
-        # Replace automatic training_step with manual optimization
+        # Add lr_scheduler_step after configure_optimizers
         (
-            """    def training_step(self, batch: Batch, batch_idx: int, optimizer_idx: int):
-        if optimizer_idx == 0:
-            return self.training_step_g(batch)
-
-        if optimizer_idx == 1:
-            return self.training_step_d(batch)""",
-            """    @property
-    def automatic_optimization(self):
-        return False
-
-    def training_step(self, batch: Batch, batch_idx: int):
-        opts = self.optimizers()
-        opt_g, opt_d = opts[0], opts[1]
-
-        # Generator step
-        opt_g.zero_grad()
-        loss_g = self.training_step_g(batch)
-        self.manual_backward(loss_g)
-        opt_g.step()
-
-        # Discriminator step
-        opt_d.zero_grad()
-        loss_d = self.training_step_d(batch)
-        self.manual_backward(loss_d)
-        opt_d.step()
-
-        # Step LR schedulers
-        if hasattr(self, '_sch_g'):
-            self._sch_g.step()
-        if hasattr(self, '_sch_d'):
-            self._sch_d.step()""",
+            "        return optimizers, schedulers\n\n    @staticmethod",
+            "        return optimizers, schedulers\n\n    def lr_scheduler_step(self, scheduler, optimizer_idx, metric):\n        scheduler.step()\n\n    @staticmethod",
         ),
-        # Replace configure_optimizers to store schedulers as attributes
-        (
-            """    def configure_optimizers(self):
-        optimizers = [
-            torch.optim.AdamW(
-                self.model_g.parameters(),
-                lr=self.hparams.learning_rate,
-                betas=self.hparams.betas,
-                eps=self.hparams.eps,
-            ),
-            torch.optim.AdamW(
-                self.model_d.parameters(),
-                lr=self.hparams.learning_rate,
-                betas=self.hparams.betas,
-                eps=self.hparams.eps,
-            ),
-        ]
-        schedulers = [
-            torch.optim.lr_scheduler.ExponentialLR(
-                optimizers[0], gamma=self.hparams.lr_decay
-            ),
-            torch.optim.lr_scheduler.ExponentialLR(
-                optimizers[1], gamma=self.hparams.lr_decay
-            ),
-        ]
-
-        return optimizers, schedulers""",
-            """    def configure_optimizers(self):
-        opt_g = torch.optim.AdamW(
-            self.model_g.parameters(),
-            lr=self.hparams.learning_rate,
-            betas=self.hparams.betas,
-            eps=self.hparams.eps,
-        )
-        opt_d = torch.optim.AdamW(
-            self.model_d.parameters(),
-            lr=self.hparams.learning_rate,
-            betas=self.hparams.betas,
-            eps=self.hparams.eps,
-        )
-        # Store schedulers as attributes — stepped manually in training_step
-        self._sch_g = torch.optim.lr_scheduler.ExponentialLR(opt_g, gamma=self.hparams.lr_decay)
-        self._sch_d = torch.optim.lr_scheduler.ExponentialLR(opt_d, gamma=self.hparams.lr_decay)
-
-        return [opt_g, opt_d]""",
-        ),
-    ], "manual optimization + scheduler fix")
+    ], "LR scheduler step override")
 
     # 3. Patch export_onnx.py — safe_globals + legacy exporter
     export_py = piper_dir / "piper_train" / "export_onnx.py"
