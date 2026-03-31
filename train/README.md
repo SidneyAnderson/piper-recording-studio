@@ -10,7 +10,7 @@ This guide walks you through turning your exported dataset into a usable Piper T
 | 2. Setup | Install Piper training environment | 10-15 min |
 | 3. Download checkpoint | Get a pre-trained model to fine-tune from | Minutes |
 | 4. Preprocess | Convert audio to training tensors | Minutes |
-| 5. Train | Fine-tune the voice model on GPU | Hours to days |
+| 5. Train | Fine-tune the voice model on GPU | 10-50 hours (see estimates below) |
 | 6. Test | Listen to checkpoints and find the best epoch | Seconds |
 | 7. Export model | Save the best checkpoint as a portable .onnx file | Seconds |
 
@@ -132,7 +132,9 @@ This creates `config.json`, `dataset.jsonl`, and audio tensor files.
 
 ### Option A: Web UI (recommended)
 
-Visit http://localhost:8000/train, configure batch size and epochs, and click **Start Training**. Training log streams live in the browser. You can stop and resume at any time.
+Visit http://localhost:8000/train, configure batch size and epochs, and click **Start Training**. The UI shows a live progress bar with elapsed time and ETA, plus a Statistics tab with loss curves. Training survives browser refreshes and server restarts.
+
+**Recommended settings for a first run:** batch size 64, 500 epochs, save every 25.
 
 ### Option B: CLI
 
@@ -144,23 +146,39 @@ python3 -m piper_train \
   --dataset-dir /path/to/training/ \
   --accelerator gpu \
   --devices 1 \
-  --batch-size 32 \
+  --batch-size 64 \
   --validation-split 0.0 \
   --num-test-examples 0 \
   --max_epochs 1000 \
   --resume_from_checkpoint /path/to/checkpoints/YOUR_CHECKPOINT.ckpt \
-  --checkpoint-epochs 10 \
-  --precision 32
+  --checkpoint-epochs 25 \
+  --precision 32 \
+  --quality high
 ```
 
-### Adjusting batch size for your GPU
+### Training time estimates
 
-| GPU VRAM | Recommended batch size |
-|----------|----------------------|
-| 8 GB | 12 |
-| 10-12 GB | 24 |
-| 16 GB | 32 |
-| 24+ GB | 32-64 |
+| Epochs | Batch Size | Quality | Approx. Time |
+|--------|-----------|---------|-------------|
+| 500 | 64 | High | ~10-12 hours |
+| 500 | 32 | High | ~20-25 hours |
+| 1000 | 64 | High | ~20-25 hours |
+| 500 | 32 | Medium | ~8-10 hours |
+
+Piper uses full-model retraining (not LoRA/adapter fine-tuning), which is why training takes longer than typical image or video fine-tuning. The dual generator+discriminator architecture (GAN-style) effectively trains two models per batch.
+
+### First epoch and CUDA compilation
+
+The first training epoch takes **5-10 minutes** due to CUDA kernel compilation (PyTorch 2.x). This is normal — subsequent epochs run much faster (~2-7 seconds depending on batch size and quality tier). Don't assume training is stuck during the first epoch.
+
+### Batch size by GPU VRAM
+
+| VRAM | Batch Size | Notes |
+|------|-----------|-------|
+| 8 GB | 12 | Slowest, but works |
+| 10-12 GB | 24 | |
+| 16 GB | 32 | |
+| 24+ GB | 64 | Recommended for faster training |
 
 Larger batch sizes train faster but don't affect final model quality. If you get out-of-memory errors, reduce `--batch-size`.
 
@@ -171,7 +189,8 @@ The web UI at `/train` includes a **Statistics tab** that shows live loss curves
 Key metrics:
 - `loss_gen_all` (generator loss) — how well the model generates speech
 - `loss_disc_all` (discriminator loss) — how well the model distinguishes real from generated speech
-- Stop training when both losses plateau (typically 500-1000 epochs for fine-tuning)
+- Stop training when both losses plateau (typically 300-500 epochs for fine-tuning)
+- Early oscillation is normal in the first 100-200 epochs
 
 ### Disk space
 
@@ -235,24 +254,41 @@ echo "Hello world!" | piper -m models/British_Narrator.510.onnx --output_file te
 ```
 
 
+## PyTorch 2.x Compatibility
+
+Piper's training code was written for PyTorch 1.x and pytorch-lightning 1.7. Modern GPUs (RTX 40xx/50xx) require PyTorch 2.6+ with CUDA 12.8, which introduces several breaking changes. The setup script automatically applies patches via `train/patch_piper.py`:
+
+1. **Manual optimization** — PyTorch 2.x removed the `optimizer_idx` parameter from `training_step`. The patch switches to manual optimization where the generator and discriminator are trained explicitly.
+2. **Custom checkpoint callback** — `ModelCheckpoint` from pytorch-lightning 1.7 is broken with PyTorch 2.x. A custom `SimpleCheckpoint` callback handles checkpoint saving.
+3. **Safe globals for checkpoint loading** — PyTorch 2.6+ requires explicit allowlisting of `pathlib.PosixPath` for loading older checkpoints.
+4. **Legacy ONNX exporter** — PyTorch 2.6+ defaults to a dynamo-based ONNX exporter that's incompatible with VITS. The patch forces the legacy exporter.
+
+These patches are applied automatically by `bash setup_training.sh` and are transparent to the user.
+
+
 ## Troubleshooting
 
 | Problem | Solution |
 |---------|----------|
 | `pytorch-lightning` install fails | Use `pip<24.1` in the training venv (the setup script handles this) |
-| Out of memory during training | Reduce `--batch-size` |
+| Out of memory during training | Reduce batch size. High quality at batch 64 needs ~24 GB VRAM. |
+| First epoch takes 5-10 minutes | Normal — CUDA kernel compilation on PyTorch 2.x. Subsequent epochs are fast. |
 | Training loss not decreasing | Check that your audio quality is consistent and clean |
 | Exported model sounds robotic | You may have over-trained — try an earlier checkpoint |
 | `piper` command not found | Included in `requirements.txt` — run `pip install -r requirements.txt` |
 | Checkpoint download fails | Checkpoints are public, no auth needed. Check your internet connection. |
 | `espeak-ng` not found | Run `sudo apt-get install espeak-ng` |
+| CUDA error: no kernel image | Your PyTorch doesn't support your GPU. Run `setup_training.sh` to install PyTorch with CUDA 12.8. |
+| `optimizer_idx` or `ExponentialLR` error | Run `setup_training.sh` to apply PyTorch 2.x patches. |
+| Zero checkpoints saved | Run `setup_training.sh` to apply the custom checkpoint callback patch. |
 
 
 ## Tips
 
 - **Quality over quantity:** Clean, consistent audio (like ElevenLabs output) is ideal for training. 1,000+ samples with fine-tuning should produce good results.
 - **Don't over-train:** More epochs is not always better. Over-training causes distortion. Watch the Statistics tab on the training page — stop when losses plateau.
-- **Test during training:** You can export and test any checkpoint while training continues. Try one every 100 epochs to find the sweet spot.
-- **pip version matters:** Piper's `pytorch-lightning~=1.7.0` dependency has invalid metadata that pip>=24.1 rejects. Always use `pip<24.1` in the training venv.
+- **Test during training:** You can export and test any checkpoint while training continues. Try one at epoch 250 and 500 to find the sweet spot.
+- **Batch size 64:** If your GPU has 24+ GB VRAM, use batch size 64 to cut training time roughly in half.
 - **Training from scratch:** Not recommended with under 5,000 samples. If you must, expect to need 2,000+ epochs and the quality may not match fine-tuning.
-- **Resumable:** Training can be stopped and resumed. The web UI and CLI both support `--resume_from_checkpoint` to continue from the latest saved checkpoint.
+- **Resumable:** Training can be stopped and resumed. The web UI automatically resumes from the latest saved checkpoint.
+- **Training is full-model:** Unlike image LoRA, Piper retrains the full 83M parameter model (generator + discriminator). This is why training takes hours, not minutes.

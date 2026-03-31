@@ -217,7 +217,7 @@
                                 <div class="card bg-light">
                                     <div class="card-body py-3">
                                         <p id="trainProgressExplain" class="text-muted mb-2" style="font-size:0.82em;">
-                                            Your voice model is being trained on your dataset. Each epoch is one full pass through all your audio samples. The model improves with each pass, learning the voice characteristics from your data.
+                                            Your voice model is being trained on your dataset. Each epoch is one full pass through all your audio samples. The first epoch takes 5-10 minutes (CUDA compilation), then each subsequent epoch takes a few seconds. You can test checkpoints while training continues.
                                         </p>
                                         <div class="d-flex justify-content-between align-items-center mb-2">
                                             <strong id="trainProgressLabel">Training Progress</strong>
@@ -421,11 +421,13 @@
                 const mode = q('#trainMode').value;
                 const hint = q('#trainModeHint');
                 if (mode === 'finetune') {
-                    hint.innerHTML = '<span class="text-info">Starts from a pre-trained voice model and adapts it to sound like your dataset. Best for under 5,000 samples. Typically 500-1000 epochs are enough — each epoch takes a few seconds.</span>';
-                    q('#maxEpochs').value = 1000;
+                    hint.innerHTML = '<span class="text-info">Starts from a pre-trained voice model and adapts it to sound like your dataset. Best for under 5,000 samples. Recommended: 500 epochs, batch size 64 (~10-12 hours). First epoch takes 5-10 min (CUDA compilation), then ~2-7s per epoch.</span>';
+                    q('#maxEpochs').value = 500;
+                    q('#batchSize').value = 64;
                 } else {
-                    hint.innerHTML = '<span class="text-info">Builds a voice model entirely from your dataset with no starting point. Requires 10,000+ samples and 2000+ epochs for good results. Each epoch takes a few seconds.</span>';
+                    hint.innerHTML = '<span class="text-info">Builds a voice model entirely from your dataset with no starting point. Requires 10,000+ samples and 2000+ epochs. Recommended: batch size 64. First epoch takes 5-10 min (CUDA compilation), then ~2-7s per epoch.</span>';
                     q('#maxEpochs').value = 2000;
+                    q('#batchSize').value = 64;
                 }
             }
             q('#trainMode').addEventListener('change', updateTrainMode);

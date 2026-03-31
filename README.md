@@ -248,6 +248,8 @@ python3 -m piper_recording_studio
 
 The setup script handles:
 - Cloning the Piper repo and installing dependencies (with pinned pip<24.1 for compatibility)
+- Installing PyTorch with CUDA 12.8 for modern GPUs (RTX 40xx/50xx)
+- Applying PyTorch 2.x compatibility patches (manual optimization, checkpoint saving, ONNX export)
 - Downloading a pre-trained checkpoint from HuggingFace (no auth required)
 - Preprocessing your dataset into training-ready tensors
 
@@ -269,30 +271,53 @@ Fine-tuning from a pre-trained checkpoint produces significantly better results 
 
 All checkpoints sourced from: https://huggingface.co/datasets/rhasspy/piper-checkpoints (public, no auth required)
 
+### Training time estimates
+
+| Epochs | Batch Size | Quality | Approx. Time |
+|--------|-----------|---------|-------------|
+| 500 | 64 | High | ~10-12 hours |
+| 500 | 32 | High | ~20-25 hours |
+| 1000 | 64 | High | ~20-25 hours |
+| 500 | 32 | Medium | ~8-10 hours |
+
+The first epoch takes 5-10 minutes due to CUDA kernel compilation (PyTorch 2.x). After that, each epoch takes 2-7 seconds depending on batch size and model quality. This is full-model retraining (not LoRA/adapter), which is why it takes longer than image fine-tuning.
+
+**Recommended first run:** 500 epochs, batch size 64, save every 25. Test the voice at epoch 250 — if it sounds good, you can stop early.
+
 ### Batch size by GPU VRAM
 
-| VRAM | Batch Size |
-|------|-----------|
-| 8 GB | 12 |
-| 10-12 GB | 24 |
-| 16 GB | 32 |
-| 24+ GB | 32-64 |
+| VRAM | Batch Size | Notes |
+|------|-----------|-------|
+| 8 GB | 12 | Slowest, but works |
+| 10-12 GB | 24 | |
+| 16 GB | 32 | |
+| 24+ GB | 64 | Recommended for faster training |
 
-If you get out-of-memory errors during training, reduce the batch size. Larger batch sizes train faster but don't affect final model quality.
+Larger batch sizes train faster but don't affect final model quality. If you get out-of-memory errors, reduce the batch size.
 
 ### Disk space
 
-Training checkpoints are ~400 MB each (high quality: ~1 GB). The web UI defaults to saving every 10 epochs. Plan for at least 10–50 GB of free space depending on your checkpoint frequency and training duration.
+Training checkpoints are ~400 MB each (high quality: ~1 GB). With save every 25 epochs over 500 epochs, that's ~20 checkpoints = 20 GB for high quality. Plan accordingly.
+
+### PyTorch 2.x compatibility
+
+Piper's training code was designed for PyTorch 1.x. The setup script automatically applies patches for PyTorch 2.x compatibility:
+- Manual optimization for multi-optimizer training (generator + discriminator)
+- Custom checkpoint callback (replaces broken ModelCheckpoint)
+- Safe globals for checkpoint loading (PyTorch 2.6+)
+- Legacy ONNX exporter (PyTorch 2.6+ dynamo fix)
+
+These patches are applied by `train/patch_piper.py` during setup and are transparent to the user.
 
 ### Testing your trained voice
 
-After exporting a checkpoint to ONNX (via the web UI or CLI), install Piper for inference:
+The web UI at `/train` has a built-in voice test player — select a checkpoint, export it, type text, and listen. You can test checkpoints while training continues.
+
+CLI alternative:
 
 ``` sh
-echo "Hello, this is my custom voice!" | piper -m models/British_Narrator.510.onnx --output_file test.wav
+echo "Hello, this is my custom voice!" | piper -m models/British_Narrator.0250.onnx --output_file test.wav
 ```
-
-The web UI at `/train` also has a built-in voice test player.
 
 See [train/README.md](train/README.md) for the complete training guide.
 

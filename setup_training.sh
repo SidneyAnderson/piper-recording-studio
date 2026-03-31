@@ -165,10 +165,11 @@ if [ -f "build_monotonic_align.sh" ]; then
     bash build_monotonic_align.sh 2>/dev/null || echo "  (monotonic align build skipped or already built)"
 fi
 
-# Patch Piper to support PyTorch 2.6+ checkpoint loading
-# PyTorch 2.6 defaults torch.load to weights_only=True which rejects
-# pathlib.PosixPath found in older checkpoints
-# Apply PyTorch 2.x compatibility patches
+# Apply PyTorch 2.x compatibility patches:
+# - Manual optimization for multi-optimizer training (generator + discriminator)
+# - Custom checkpoint callback (replaces broken ModelCheckpoint)
+# - Safe globals for checkpoint loading (PyTorch 2.6+)
+# - Legacy ONNX exporter (PyTorch 2.6+ dynamo fix)
 echo "  Applying PyTorch 2.x compatibility patches..."
 python3 "$PROJECT_DIR/train/patch_piper.py"
 
