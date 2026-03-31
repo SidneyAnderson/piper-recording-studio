@@ -1,3 +1,13 @@
+"""Export recorded or generated audio to Piper-compatible LJSpeech dataset format.
+
+Reads audio files (WAV or WebM) and their corresponding text transcriptions
+from the output directory, trims silence using Silero VAD, converts to WAV,
+and writes a metadata.csv suitable for Piper training.
+
+Usage:
+    python3 -m export_dataset --audio-glob '*.wav' output/en-GB/ dataset_en-GB/
+"""
+
 import argparse
 import csv
 import logging
@@ -67,6 +77,12 @@ def main():
 
 
 class ExportAudio:
+    """Callable that exports a single audio file to WAV with silence trimming.
+
+    Uses thread-local storage for the Silero VAD detector so each thread
+    in the ThreadPoolExecutor gets its own model instance.
+    """
+
     def __init__(self):
         self.thread_data = threading.local()
 
@@ -169,6 +185,7 @@ class ExportAudio:
 
 
 def make_silence_detector() -> SileroVoiceActivityDetector:
+    """Create a Silero VAD detector using the bundled ONNX model."""
     silence_model = _DIR / "models" / "silero_vad.onnx"
     return SileroVoiceActivityDetector(silence_model)
 

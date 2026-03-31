@@ -134,7 +134,7 @@ This creates `config.json`, `dataset.jsonl`, and audio tensor files.
 
 Visit http://localhost:8000/train, configure batch size and epochs, and click **Start Training**. The UI shows a live progress bar with elapsed time and ETA, plus a Statistics tab with loss curves. Training survives browser refreshes and server restarts.
 
-**Recommended settings for a first run:** batch size 64, 500 epochs, save every 25.
+**Recommended settings for a first run:** batch size 32 (high quality) or 64 (medium quality), 500 epochs, save every 25.
 
 ### Option B: CLI
 
@@ -258,7 +258,7 @@ echo "Hello world!" | piper -m models/British_Narrator.510.onnx --output_file te
 
 Piper's training code was written for PyTorch 1.x and pytorch-lightning 1.7. Modern GPUs (RTX 40xx/50xx) require PyTorch 2.6+ with CUDA 12.8, which introduces several breaking changes. The setup script automatically applies patches via `train/patch_piper.py`:
 
-1. **Manual optimization** — PyTorch 2.x removed the `optimizer_idx` parameter from `training_step`. The patch switches to manual optimization where the generator and discriminator are trained explicitly.
+1. **Automatic optimization** — pytorch-lightning 1.7 passes `optimizer_idx` correctly to `training_step`, so the original automatic optimization works with PyTorch 2.x. The LR scheduler step override ensures the new PyTorch 2.x scheduler API is handled properly.
 2. **Custom checkpoint callback** — `ModelCheckpoint` from pytorch-lightning 1.7 is broken with PyTorch 2.x. A custom `SimpleCheckpoint` callback handles checkpoint saving.
 3. **Safe globals for checkpoint loading** — PyTorch 2.6+ requires explicit allowlisting of `pathlib.PosixPath` for loading older checkpoints.
 4. **Legacy ONNX exporter** — PyTorch 2.6+ defaults to a dynamo-based ONNX exporter that's incompatible with VITS. The patch forces the legacy exporter.

@@ -1,3 +1,5 @@
+"""Voice activity detection using Silero VAD (ONNX inference)."""
+
 import typing
 from pathlib import Path
 

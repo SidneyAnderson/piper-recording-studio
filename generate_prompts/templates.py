@@ -156,6 +156,7 @@ def _p(pool):
 # ============================================================================
 
 def daily_life():
+    """Generate a sentence about everyday routines, errands, and household life."""
     templates = [
         f"{_p(NAMES_BRITISH)} usually wakes up at {_p(TIMES)} and starts the day with a cup of tea.",
         f"Could you please pass me the {_p(COLOURS)} {_p(MATERIALS)} box from the {_p(ROOMS)}?",
@@ -175,6 +176,7 @@ def daily_life():
 
 
 def weather_nature():
+    """Generate a sentence about weather conditions, seasons, or wildlife."""
     templates = [
         f"The forecast says it'll be {_p(WEATHER)} tomorrow with temperatures around {_p(NUMBERS_SPOKEN)} degrees.",
         f"What a {_p(ADJECTIVES)} {_p(WEATHER)} morning! Perfect for a walk in the park.",
@@ -192,6 +194,7 @@ def weather_nature():
 
 
 def food_cooking():
+    """Generate a sentence about cooking, recipes, or dining."""
     templates = [
         f"Could you stir the {_p(FOODS)} while I prepare the {_p(FOODS)}?",
         f"This recipe calls for {_p(NUMBERS_SPOKEN)} grams of {_p(FOODS)} and a pinch of salt.",
@@ -209,6 +212,7 @@ def food_cooking():
 
 
 def travel_directions():
+    """Generate a sentence about journeys, navigation, or public transport."""
     templates = [
         f"The fastest way to {_p(CITIES_BRITISH)} is by {_p(TRANSPORT)} from the central station.",
         f"Turn left at the {_p(BRITISH_EXPRESSIONS)} and continue for about {_p(NUMBERS_SPOKEN)} metres.",
@@ -226,6 +230,7 @@ def travel_directions():
 
 
 def technology():
+    """Generate a sentence about software, devices, or digital systems."""
     templates = [
         f"The new software update should fix the {_p(ADJECTIVES)} performance issues we've been having.",
         f"Have you tried restarting the device? That often resolves the problem {_p(BRITISH_EXPRESSIONS)}.",
@@ -242,6 +247,7 @@ def technology():
 
 
 def health_wellness():
+    """Generate a sentence about exercise, medical appointments, or wellbeing."""
     templates = [
         f"The {_p(JOBS)} advised getting at least {_p(NUMBERS_SPOKEN)} minutes of exercise daily.",
         f"I've been feeling rather {_p(EMOTIONS)} since I started {_p(HOBBIES)} every morning.",
@@ -258,6 +264,7 @@ def health_wellness():
 
 
 def sports_hobbies():
+    """Generate a sentence about sports matches, leisure activities, or hobbies."""
     templates = [
         f"{_p(NAMES_BRITISH)} has been practising {_p(HOBBIES)} for about {_p(NUMBERS_SPOKEN)} years.",
         f"The match between {_p(CITIES_BRITISH)} and {_p(CITIES_BRITISH)} was absolutely {_p(ADJECTIVES)}!",
@@ -274,6 +281,7 @@ def sports_hobbies():
 
 
 def education_learning():
+    """Generate a sentence about school, university, or studying."""
     templates = [
         f"The {_p(JOBS)} explained the concept in a {_p(ADJECTIVES)} clear and engaging way.",
         f"{_p(NAMES_BRITISH)} is studying at the University of {_p(CITIES_BRITISH)} this year.",
@@ -290,6 +298,7 @@ def education_learning():
 
 
 def business_finance():
+    """Generate a sentence about meetings, reports, or office work."""
     templates = [
         f"The quarterly report shows revenue increased by {_p(NUMBERS_SPOKEN)} per cent.",
         f"We need to submit the proposal to the {_p(JOBS)} before {_p(TIMES)} on Friday.",
@@ -306,6 +315,7 @@ def business_finance():
 
 
 def arts_entertainment():
+    """Generate a sentence about galleries, films, music, or performances."""
     templates = [
         f"The {_p(ADJECTIVES)} exhibition at the gallery in {_p(CITIES_BRITISH)} runs until {_p(MONTHS)}.",
         f"Have you seen the new film? The reviews say it's absolutely {_p(ADJECTIVES)}.",
@@ -322,6 +332,7 @@ def arts_entertainment():
 
 
 def science():
+    """Generate a sentence about experiments, research, or natural phenomena."""
     templates = [
         f"The experiment yielded {_p(ADJECTIVES)} results that exceeded our initial expectations.",
         f"Researchers at the University of {_p(CITIES_BRITISH)} published their findings last {_p(MONTHS)}.",
@@ -338,6 +349,7 @@ def science():
 
 
 def history_culture():
+    """Generate a sentence about historical events, traditions, or heritage sites."""
     templates = [
         f"The castle was built in the {_p(ORDINALS)} century and has been restored beautifully.",
         f"{_p(CITIES_BRITISH)} has a rich history dating back over {_p(NUMBERS_SPOKEN)} years.",
@@ -354,6 +366,7 @@ def history_culture():
 
 
 def emotions_social():
+    """Generate a sentence expressing feelings or social interactions."""
     templates = [
         f"I'm absolutely {_p(EMOTIONS)} about the news! When did you find out?",
         f"{_p(NAMES_BRITISH)} seemed {_p(EMOTIONS)} when we told them about the surprise.",
@@ -370,6 +383,7 @@ def emotions_social():
 
 
 def home_garden():
+    """Generate a sentence about interior decor, repairs, or gardening."""
     templates = [
         f"The {_p(COLOURS)} curtains in the {_p(ROOMS)} really brighten up the whole space.",
         f"We need to fix the leak in the {_p(ROOMS)} before it causes more damage.",
@@ -386,6 +400,7 @@ def home_garden():
 
 
 def news_current_affairs():
+    """Generate a sentence about government, policy, or public events."""
     templates = [
         f"The Prime Minister announced the new policy at {_p(TIMES)} this morning.",
         f"Residents of {_p(CITIES_BRITISH)} have expressed {_p(EMOTIONS)} views about the proposal.",
@@ -402,6 +417,7 @@ def news_current_affairs():
 
 
 def british_culture():
+    """Generate a sentence using British idioms, customs, or cultural references."""
     templates = [
         f"Shall we pop into the {_p(BRITISH_EXPRESSIONS)} on the way home for some {_p(FOODS)}?",
         f"The queue at the {_p(BRITISH_EXPRESSIONS)} stretched right round the corner.",
@@ -418,6 +434,7 @@ def british_culture():
 
 
 def numbers_dates_times():
+    """Generate a sentence rich in spoken numbers, dates, and times."""
     templates = [
         f"The train departs at {_p(TIMES)} from platform {_p(ORDINALS).split('-')[0]}.",
         f"Her birthday is on the {_p(ORDINALS)} of {_p(MONTHS)}, nineteen ninety-seven.",
@@ -434,6 +451,7 @@ def numbers_dates_times():
 
 
 def phone_addresses():
+    """Generate a sentence containing phone numbers, postcodes, or street addresses."""
     n = lambda: str(random.randint(0, 9))
     templates = [
         f"You can reach me on oh seven {n()}{n()}{n()}, {n()}{n()}{n()}, {n()}{n()}{n()}.",

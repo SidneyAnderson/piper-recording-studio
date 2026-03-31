@@ -42,6 +42,7 @@ def patch_file(filepath: Path, patches: list[tuple[str, str]], description: str)
 
 
 def main():
+    """Apply all PyTorch 2.x compatibility patches to the Piper training code."""
     # Determine piper python directory
     piper_dir = Path.cwd()
     if not (piper_dir / "piper_train" / "__main__.py").exists():

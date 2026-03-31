@@ -1,3 +1,5 @@
+"""Trim leading and trailing silence from audio using voice activity detection."""
+
 from typing import Optional, Tuple
 
 import numpy as np

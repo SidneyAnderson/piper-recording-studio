@@ -1508,6 +1508,17 @@ print(json.dumps(results))
 def load_prompts(
     prompts_dirs: List[Path],
 ) -> Tuple[Dict[str, List[Prompt]], Dict[str, str]]:
+    """Load prompt text files from one or more directories.
+
+    Each directory should contain language subdirectories named
+    ``<Language Name>_<code>`` (e.g. ``English (United Kingdom)_en-GB``).
+    Inside each language directory, ``.txt`` files hold tab-separated
+    ``id<TAB>text`` lines (or plain text lines with auto-assigned IDs).
+
+    Returns:
+        prompts: dict mapping language code to list of Prompt objects.
+        languages: dict mapping display name to language code.
+    """
     prompts = defaultdict(list)
     languages = {}
 
@@ -1541,6 +1552,11 @@ def get_next_prompt(
     output_dir: Path,
     language: str,
 ):
+    """Find the next incomplete prompt for a given language.
+
+    Returns (next_prompt, num_complete, num_items).  next_prompt is None
+    when all prompts have been completed.
+    """
     language_prompts = prompts[language]
     language_dir = output_dir / language
     incomplete_prompts = []

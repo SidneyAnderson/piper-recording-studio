@@ -45,6 +45,14 @@ Branch: `elevenlabs-integration`
 
 8. **Training process**: Runs detached (`start_new_session=True`), survives server restarts. PID saved in `training.pid`. Stop via web UI or `pkill -f piper_train`.
 
+9. **Training metadata**: `training.pid` stores five lines: PID, start_time, requested_epochs, ckpt_base_epoch, max_epochs. The helper `_read_training_pid_file()` returns a **dict** (not a tuple) with keys: `pid`, `start_time`, `requested_epochs`, `ckpt_base_epoch`, `max_epochs`.
+
+10. **Stats endpoint** (`/api/training/stats`): Returns `loss_gen`, `loss_disc` arrays with `step`, `value`, and `epoch` fields, plus `checkpoint_epochs` (list of epoch numbers that have saved checkpoints).
+
+11. **Charts**: Loss charts are aligned to checkpoint epochs and split into separate Generator/Discriminator tabs in the frontend. Epoch labels on the x-axis are user-facing (1 to N), calculated by subtracting `ckpt_base_epoch`.
+
+12. **`args.enable_checkpointing = False`**: Must be set directly on the `Namespace` object because `Trainer.from_argparse_args` gives Namespace values priority over kwargs.
+
 ### Setup Script Dependencies (fragile — order matters)
 
 ```
@@ -74,7 +82,7 @@ torch+cu128        # Required — RTX 5090 needs CUDA 12.8 (sm_120)
 - `voice_profiles/` — Saved voice configs
 - `.env` — ElevenLabs API key
 
-### Current State (as of 2026-03-30)
+### Current State (as of 2026-03-31)
 
 - 1,150 audio samples generated via ElevenLabs (en-GB, British voice)
 - 11,000 additional prompts generated (not yet sent through ElevenLabs)
