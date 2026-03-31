@@ -832,13 +832,17 @@
                         q('#trainElapsed').textContent = `Elapsed: ${elapsedStr}${etaStr}`;
                     }
 
-                    if (!data.running && progressInterval && trainJustStarted <= 0) {
-                        stopProgressPolling();
-                        setTraining(false);
-                        q('#trainStatus').innerHTML = '<span class="text-success"><i class="fas fa-check-circle"></i> Training complete!</span>';
-                        loadCheckpoints();
+                    if (trainJustStarted > 0) {
+                        trainJustStarted--;
+                    } else if (!data.running && progressInterval) {
+                        // Only mark complete if we had confirmed it was running before
+                        if (data.total_checkpoints > 0 || data.elapsed_seconds > 30) {
+                            stopProgressPolling();
+                            setTraining(false);
+                            q('#trainStatus').innerHTML = '<span class="text-success"><i class="fas fa-check-circle"></i> Training complete!</span>';
+                            loadCheckpoints();
+                        }
                     }
-                    if (trainJustStarted > 0) trainJustStarted--;
 
                     // Refresh checkpoint lists
                     loadCheckpoints();

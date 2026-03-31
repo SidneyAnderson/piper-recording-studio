@@ -168,47 +168,9 @@ fi
 # Patch Piper to support PyTorch 2.6+ checkpoint loading
 # PyTorch 2.6 defaults torch.load to weights_only=True which rejects
 # pathlib.PosixPath found in older checkpoints
-# Patch both __main__.py and export_onnx.py for torch.load compatibility
-for PIPER_FILE in "piper_train/__main__.py" "piper_train/export_onnx.py"; do
-    if [ -f "$PIPER_FILE" ] && ! grep -q "add_safe_globals" "$PIPER_FILE"; then
-        echo "  Patching $PIPER_FILE for PyTorch 2.6+ checkpoint compatibility..."
-        sed -i '/^import torch$/a import pathlib\nif hasattr(torch.serialization, "add_safe_globals"):\n    torch.serialization.add_safe_globals([pathlib.PosixPath, pathlib.WindowsPath])' "$PIPER_FILE"
-    fi
-done
-
-# Patch LR scheduler compatibility for PyTorch 2.x + pytorch-lightning 1.7
-LIGHTNING_FILE="piper_train/vits/lightning.py"
-if [ -f "$LIGHTNING_FILE" ] && ! grep -q "lr_scheduler_step" "$LIGHTNING_FILE"; then
-    echo "  Patching LR scheduler for PyTorch 2.x compatibility..."
-    sed -i '/return optimizers, schedulers/a\
-\
-    def lr_scheduler_step(self, scheduler, optimizer_idx, metric):\
-        scheduler.step()' "$LIGHTNING_FILE"
-fi
-
-# Keep all checkpoints and ensure callback survives checkpoint restore
-PIPER_MAIN="piper_train/__main__.py"
-if [ -f "$PIPER_MAIN" ] && ! grep -q "save_top_k" "$PIPER_MAIN"; then
-    echo "  Patching checkpoint saving to keep all checkpoints..."
-    sed -i 's/ModelCheckpoint(every_n_epochs=args.checkpoint_epochs)/ModelCheckpoint(every_n_epochs=args.checkpoint_epochs, save_top_k=-1)/' "$PIPER_MAIN"
-fi
-# Re-set callback right before trainer.fit to survive checkpoint restore
-if [ -f "$PIPER_MAIN" ] && ! grep -q "Remove any existing checkpoint callbacks" "$PIPER_MAIN"; then
-    echo "  Patching checkpoint callback to survive restore..."
-    sed -i '/trainer\.fit(model)/i\
-    # Ensure checkpoint callback is set right before fit (survives checkpoint restore)\
-    if args.checkpoint_epochs is not None:\
-        from pytorch_lightning.callbacks import ModelCheckpoint as _MC\
-        trainer.callbacks = [c for c in trainer.callbacks if not isinstance(c, _MC)]\
-        trainer.callbacks.append(_MC(every_n_epochs=args.checkpoint_epochs, save_top_k=-1))' "$PIPER_MAIN"
-fi
-
-# Patch ONNX export to use legacy exporter (PyTorch 2.6+ dynamo is incompatible with VITS)
-EXPORT_FILE="piper_train/export_onnx.py"
-if [ -f "$EXPORT_FILE" ] && ! grep -q "dynamo=False" "$EXPORT_FILE"; then
-    echo "  Patching ONNX export for PyTorch 2.6+ compatibility..."
-    sed -i 's/torch\.onnx\.export(/torch.onnx.export(dynamo=False, /' "$EXPORT_FILE"
-fi
+# Apply PyTorch 2.x compatibility patches
+echo "  Applying PyTorch 2.x compatibility patches..."
+python3 "$PROJECT_DIR/train/patch_piper.py"
 
 echo "  Piper training environment ready."
 echo ""
