@@ -421,13 +421,13 @@
                 const mode = q('#trainMode').value;
                 const hint = q('#trainModeHint');
                 if (mode === 'finetune') {
-                    hint.innerHTML = '<span class="text-info">Starts from a pre-trained voice model and adapts it to sound like your dataset. Best for under 5,000 samples. Recommended: 500 epochs, batch size 64 (~10-12 hours). First epoch takes 5-10 min (CUDA compilation), then ~2-7s per epoch.</span>';
+                    hint.innerHTML = '<span class="text-info">Starts from a pre-trained voice model and adapts it to sound like your dataset. Best for under 5,000 samples. Recommended: 500 epochs, batch size 32 (high quality) or 64 (medium). First epoch takes 5-10 min (CUDA compilation), then ~5-10s per epoch.</span>';
                     q('#maxEpochs').value = 500;
-                    q('#batchSize').value = 64;
+                    q('#batchSize').value = 32;
                 } else {
-                    hint.innerHTML = '<span class="text-info">Builds a voice model entirely from your dataset with no starting point. Requires 10,000+ samples and 2000+ epochs. Recommended: batch size 64. First epoch takes 5-10 min (CUDA compilation), then ~2-7s per epoch.</span>';
+                    hint.innerHTML = '<span class="text-info">Builds a voice model entirely from your dataset with no starting point. Requires 10,000+ samples and 2000+ epochs. Batch size 32 for high quality, 64 for medium. First epoch takes 5-10 min (CUDA compilation).</span>';
                     q('#maxEpochs').value = 2000;
-                    q('#batchSize').value = 64;
+                    q('#batchSize').value = 32;
                 }
             }
             q('#trainMode').addEventListener('change', updateTrainMode);

@@ -146,7 +146,7 @@ python3 -m piper_train \
   --dataset-dir /path/to/training/ \
   --accelerator gpu \
   --devices 1 \
-  --batch-size 64 \
+  --batch-size 32 \
   --validation-split 0.0 \
   --num-test-examples 0 \
   --max_epochs 1000 \
@@ -160,10 +160,10 @@ python3 -m piper_train \
 
 | Epochs | Batch Size | Quality | Approx. Time |
 |--------|-----------|---------|-------------|
-| 500 | 64 | High | ~10-12 hours |
-| 500 | 32 | High | ~20-25 hours |
-| 1000 | 64 | High | ~20-25 hours |
-| 500 | 32 | Medium | ~8-10 hours |
+| 500 | 32 | High | ~12-15 hours |
+| 1000 | 32 | High | ~25-30 hours |
+| 500 | 64 | Medium | ~6-8 hours |
+| 500 | 32 | Medium | ~10-12 hours |
 
 Piper uses full-model retraining (not LoRA/adapter fine-tuning), which is why training takes longer than typical image or video fine-tuning. The dual generator+discriminator architecture (GAN-style) effectively trains two models per batch.
 
@@ -178,7 +178,7 @@ The first training epoch takes **5-10 minutes** due to CUDA kernel compilation (
 | 8 GB | 12 | Slowest, but works |
 | 10-12 GB | 24 | |
 | 16 GB | 32 | |
-| 24+ GB | 64 | Recommended for faster training |
+| 24+ GB | 32 (high) / 64 (medium) | High quality model uses more VRAM per batch |
 
 Larger batch sizes train faster but don't affect final model quality. If you get out-of-memory errors, reduce `--batch-size`.
 

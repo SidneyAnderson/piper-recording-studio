@@ -275,14 +275,14 @@ All checkpoints sourced from: https://huggingface.co/datasets/rhasspy/piper-chec
 
 | Epochs | Batch Size | Quality | Approx. Time |
 |--------|-----------|---------|-------------|
-| 500 | 64 | High | ~10-12 hours |
-| 500 | 32 | High | ~20-25 hours |
-| 1000 | 64 | High | ~20-25 hours |
-| 500 | 32 | Medium | ~8-10 hours |
+| 500 | 32 | High | ~12-15 hours |
+| 1000 | 32 | High | ~25-30 hours |
+| 500 | 64 | Medium | ~6-8 hours |
+| 500 | 32 | Medium | ~10-12 hours |
 
 The first epoch takes 5-10 minutes due to CUDA kernel compilation (PyTorch 2.x). After that, each epoch takes 2-7 seconds depending on batch size and model quality. This is full-model retraining (not LoRA/adapter), which is why it takes longer than image fine-tuning.
 
-**Recommended first run:** 500 epochs, batch size 64, save every 25. Test the voice at epoch 250 — if it sounds good, you can stop early.
+**Recommended first run:** 500 epochs, batch size 32 (high quality) or 64 (medium), save every 25. Test the voice at epoch 250 — if it sounds good, you can stop early.
 
 ### Batch size by GPU VRAM
 
@@ -291,7 +291,7 @@ The first epoch takes 5-10 minutes due to CUDA kernel compilation (PyTorch 2.x).
 | 8 GB | 12 | Slowest, but works |
 | 10-12 GB | 24 | |
 | 16 GB | 32 | |
-| 24+ GB | 64 | Recommended for faster training |
+| 24+ GB | 32 (high) / 64 (medium) | High quality model uses more VRAM per batch |
 
 Larger batch sizes train faster but don't affect final model quality. If you get out-of-memory errors, reduce the batch size.
 
