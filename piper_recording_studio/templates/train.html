@@ -239,45 +239,38 @@
                             <div id="trainTabsCard" class="mt-3" style="display:none;">
                                 <ul class="nav nav-tabs" role="tablist">
                                     <li class="nav-item">
-                                        <a class="nav-link active" id="tab-stats" data-tab="stats" href="#" onclick="switchTab('stats'); return false;">Statistics</a>
+                                        <a class="nav-link active" id="tab-gen" data-tab="gen" href="#" onclick="switchTab('gen'); return false;">Generator Loss</a>
+                                    </li>
+                                    <li class="nav-item">
+                                        <a class="nav-link" id="tab-disc" data-tab="disc" href="#" onclick="switchTab('disc'); return false;">Discriminator Loss</a>
                                     </li>
                                     <li class="nav-item">
                                         <a class="nav-link" id="tab-log" data-tab="log" href="#" onclick="switchTab('log'); return false;">Log</a>
                                     </li>
                                 </ul>
                                 <div class="border border-top-0 rounded-bottom p-3">
-                                    <!-- Statistics Tab -->
-                                    <div id="statsPanel">
-                                        <div class="row mb-2">
-                                            <div class="col-md-6">
-                                                <div class="card">
-                                                    <div class="card-body p-2">
-                                                        <h6 class="card-title mb-1" style="font-size:0.85em;">Generator Loss</h6>
-                                                        <canvas id="lossGenChart" height="150"></canvas>
-                                                        <div id="lossGenValue" class="text-muted text-center" style="font-size:0.8em;"></div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div class="col-md-6">
-                                                <div class="card">
-                                                    <div class="card-body p-2">
-                                                        <h6 class="card-title mb-1" style="font-size:0.85em;">Discriminator Loss</h6>
-                                                        <canvas id="lossDiscChart" height="150"></canvas>
-                                                        <div id="lossDiscValue" class="text-muted text-center" style="font-size:0.8em;"></div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <p class="text-muted mb-0" style="font-size:0.8em;">
-                                            <strong>How to read:</strong> Both losses should gradually decrease and then flatten out (plateau). Early oscillation is normal — the model is adjusting to your data. The trend becomes meaningful after 200+ epochs.
-                                            <br><strong>Converging (good):</strong> Lines slope down then flatten — your model is learning the voice.
-                                            <br><strong>Over-training (bad):</strong> Lines were flat but start rising — stop and test an earlier checkpoint.
-                                            <br><strong>Early training:</strong> Jagged, bouncing lines are expected in the first 100-200 epochs.
+                                    <!-- Generator Loss Tab -->
+                                    <div id="genPanel">
+                                        <canvas id="lossGenChart" height="280"></canvas>
+                                        <div id="lossGenValue" class="text-muted text-center mt-1" style="font-size:0.85em;"></div>
+                                        <p class="text-muted mt-2 mb-0" style="font-size:0.8em;">
+                                            Should gradually decrease then flatten. Early oscillation is normal.
+                                            <strong>Converging:</strong> slopes down then flattens.
+                                            <strong>Over-training:</strong> was flat but starts rising — test an earlier checkpoint.
+                                        </p>
+                                    </div>
+                                    <!-- Discriminator Loss Tab -->
+                                    <div id="discPanel" style="display:none;">
+                                        <canvas id="lossDiscChart" height="280"></canvas>
+                                        <div id="lossDiscValue" class="text-muted text-center mt-1" style="font-size:0.85em;"></div>
+                                        <p class="text-muted mt-2 mb-0" style="font-size:0.8em;">
+                                            Oscillates around 2.0-2.5 and stays relatively stable. A slight downward trend is healthy.
+                                            If it drops below ~1.5 or spikes above ~4, the training may be unstable.
                                         </p>
                                     </div>
                                     <!-- Log Tab -->
                                     <div id="logPanel" style="display:none;">
-                                        <div id="trainLog" class="border rounded p-2 bg-dark text-light" style="height: 16em; overflow-y: auto; font-family: monospace; font-size: 0.8em; white-space: pre-wrap;"></div>
+                                        <div id="trainLog" class="border rounded p-2 bg-dark text-light" style="height: 20em; overflow-y: auto; font-family: monospace; font-size: 0.8em; white-space: pre-wrap;"></div>
                                     </div>
                                 </div>
                             </div>
@@ -662,11 +655,13 @@
 
             // --- Tab switching ---
             function switchTab(tab) {
-                q('#tab-stats').classList.toggle('active', tab === 'stats');
+                q('#tab-gen').classList.toggle('active', tab === 'gen');
+                q('#tab-disc').classList.toggle('active', tab === 'disc');
                 q('#tab-log').classList.toggle('active', tab === 'log');
-                q('#statsPanel').style.display = tab === 'stats' ? '' : 'none';
+                q('#genPanel').style.display = tab === 'gen' ? '' : 'none';
+                q('#discPanel').style.display = tab === 'disc' ? '' : 'none';
                 q('#logPanel').style.display = tab === 'log' ? '' : 'none';
-                if (tab === 'stats') refreshStats();
+                if (tab === 'gen' || tab === 'disc') refreshStats();
             }
 
             // --- Simple line chart on canvas ---
@@ -674,7 +669,7 @@
                 const canvas = q('#' + canvasId);
                 const ctx = canvas.getContext('2d');
                 const w = canvas.width = canvas.parentElement.clientWidth - 16;
-                const h = canvas.height = 170;
+                const h = canvas.height = 280;
                 ctx.clearRect(0, 0, w, h);
 
                 if (!data || data.length < 2) {
