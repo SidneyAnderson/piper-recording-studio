@@ -718,25 +718,32 @@
                 const epochs = data.map(d => d.epoch != null ? d.epoch : null);
                 const userEpoch = (e) => e != null && startEpoch != null ? e - startEpoch + 1 : e;
 
-                // Checkpoint marker vertical lines
+                // Checkpoint marker vertical lines — thin out labels when dense
                 if (checkpointEpochs && checkpointEpochs.length > 0) {
-                    ctx.strokeStyle = 'rgba(220, 53, 69, 0.25)';
-                    ctx.lineWidth = 1;
-                    ctx.setLineDash([3, 3]);
-                    for (const ckEpoch of checkpointEpochs) {
-                        // Find closest data point matching this epoch
+                    // Determine how many labels we can fit (~60px per label)
+                    const maxLabels = Math.max(3, Math.floor(plotW / 60));
+                    const labelEvery = Math.max(1, Math.ceil(checkpointEpochs.length / maxLabels));
+
+                    checkpointEpochs.forEach((ckEpoch, ci) => {
                         const idx = data.findIndex(d => d.epoch != null && d.epoch >= ckEpoch);
-                        if (idx >= 0) {
-                            const x = xOf(idx);
-                            ctx.beginPath(); ctx.moveTo(x, padTop); ctx.lineTo(x, padTop + plotH); ctx.stroke();
-                            // Checkpoint label at top
+                        if (idx < 0) return;
+                        const x = xOf(idx);
+
+                        // Always draw the dashed line
+                        ctx.strokeStyle = 'rgba(220, 53, 69, 0.15)';
+                        ctx.lineWidth = 1;
+                        ctx.setLineDash([3, 3]);
+                        ctx.beginPath(); ctx.moveTo(x, padTop); ctx.lineTo(x, padTop + plotH); ctx.stroke();
+                        ctx.setLineDash([]);
+
+                        // Only label every Nth checkpoint to avoid overlap
+                        if (ci % labelEvery === 0 || ci === checkpointEpochs.length - 1) {
                             ctx.fillStyle = 'rgba(220, 53, 69, 0.7)';
                             ctx.font = '9px sans-serif';
                             ctx.textAlign = 'center';
                             ctx.fillText('💾' + userEpoch(ckEpoch), x, padTop - 1);
                         }
-                    }
-                    ctx.setLineDash([]);
+                    });
                 }
 
                 // Data line
