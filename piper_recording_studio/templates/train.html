@@ -664,7 +664,9 @@
                 if (tab === 'gen' || tab === 'disc') refreshStats();
             }
 
-            // --- Simple line chart on canvas ---
+            // --- Line chart aligned to checkpoint epochs ---
+            // Each x-axis point = a saved checkpoint you can test.
+            // For each checkpoint epoch we pick the closest loss data point.
             function drawChart(canvasId, data, color, checkpointEpochs, startEpoch) {
                 const canvas = q('#' + canvasId);
                 const ctx = canvas.getContext('2d');
@@ -680,96 +682,105 @@
                     return;
                 }
 
-                const values = data.map(d => d.value);
+                const userEpoch = (e) => e != null && startEpoch != null ? e - startEpoch : e;
+
+                // Filter data to checkpoint epochs only. For each checkpoint,
+                // find the closest data point by epoch.
+                let plotData;
+                if (checkpointEpochs && checkpointEpochs.length >= 2) {
+                    plotData = [];
+                    for (const ckEp of checkpointEpochs) {
+                        let best = null, bestDist = Infinity;
+                        for (const d of data) {
+                            if (d.epoch == null) continue;
+                            const dist = Math.abs(d.epoch - ckEp);
+                            if (dist < bestDist) { bestDist = dist; best = d; }
+                        }
+                        if (best && bestDist <= 15) {
+                            plotData.push({ value: best.value, epoch: ckEp });
+                        }
+                    }
+                }
+                // Fall back to raw data if not enough checkpoints yet
+                if (!plotData || plotData.length < 2) {
+                    plotData = data.filter(d => d.epoch != null);
+                }
+                if (plotData.length < 2) {
+                    ctx.fillStyle = '#999';
+                    ctx.font = '12px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('Waiting for data...', w/2, h/2);
+                    return;
+                }
+
+                const values = plotData.map(d => d.value);
                 const minV = Math.min(...values);
                 const maxV = Math.max(...values);
                 const range = maxV - minV || 1;
-                const padTop = 10;
-                const padBottom = 28; // room for x-axis labels
-                const padLeft = 40;
+                const padTop = 14;
+                const padBottom = 30;
+                const padLeft = 44;
                 const padRight = 10;
                 const plotW = w - padLeft - padRight;
                 const plotH = h - padTop - padBottom;
 
-                // Helper: data index -> x coordinate
-                const xOf = (i) => padLeft + plotW * (i / (data.length - 1));
-                // Helper: value -> y coordinate
+                const xOf = (i) => padLeft + plotW * (i / (plotData.length - 1));
                 const yOf = (v) => padTop + plotH * (1 - (v - minV) / range);
 
-                // Grid lines
+                // Horizontal grid lines + Y-axis labels
                 ctx.strokeStyle = '#e0e0e0';
                 ctx.lineWidth = 0.5;
-                for (let i = 0; i <= 4; i++) {
-                    const y = padTop + plotH * (i/4);
-                    ctx.beginPath(); ctx.moveTo(padLeft, y); ctx.lineTo(w - padRight, y); ctx.stroke();
-                }
-
-                // Y-axis labels
                 ctx.fillStyle = '#999';
                 ctx.font = '10px sans-serif';
                 ctx.textAlign = 'right';
                 for (let i = 0; i <= 4; i++) {
-                    const val = maxV - range * (i/4);
-                    const y = padTop + plotH * (i/4);
+                    const y = padTop + plotH * (i / 4);
+                    ctx.beginPath(); ctx.moveTo(padLeft, y); ctx.lineTo(w - padRight, y); ctx.stroke();
+                    const val = maxV - range * (i / 4);
                     ctx.fillText(val.toFixed(1), padLeft - 4, y + 3);
-                }
-
-                // Build epoch list from data for x-axis
-                const epochs = data.map(d => d.epoch != null ? d.epoch : null);
-                const userEpoch = (e) => e != null && startEpoch != null ? e - startEpoch + 1 : e;
-
-                // Checkpoint marker vertical lines — thin out labels when dense
-                if (checkpointEpochs && checkpointEpochs.length > 0) {
-                    // Determine how many labels we can fit (~60px per label)
-                    const maxLabels = Math.max(3, Math.floor(plotW / 60));
-                    const labelEvery = Math.max(1, Math.ceil(checkpointEpochs.length / maxLabels));
-
-                    checkpointEpochs.forEach((ckEpoch, ci) => {
-                        const idx = data.findIndex(d => d.epoch != null && d.epoch >= ckEpoch);
-                        if (idx < 0) return;
-                        const x = xOf(idx);
-
-                        // Always draw the dashed line
-                        ctx.strokeStyle = 'rgba(220, 53, 69, 0.15)';
-                        ctx.lineWidth = 1;
-                        ctx.setLineDash([3, 3]);
-                        ctx.beginPath(); ctx.moveTo(x, padTop); ctx.lineTo(x, padTop + plotH); ctx.stroke();
-                        ctx.setLineDash([]);
-
-                        // Only label every Nth checkpoint to avoid overlap
-                        if (ci % labelEvery === 0 || ci === checkpointEpochs.length - 1) {
-                            ctx.fillStyle = 'rgba(220, 53, 69, 0.7)';
-                            ctx.font = '9px sans-serif';
-                            ctx.textAlign = 'center';
-                            ctx.fillText('💾' + userEpoch(ckEpoch), x, padTop - 1);
-                        }
-                    });
                 }
 
                 // Data line
                 ctx.strokeStyle = color;
-                ctx.lineWidth = 1.5;
+                ctx.lineWidth = 2;
                 ctx.beginPath();
-                data.forEach((d, i) => {
+                plotData.forEach((d, i) => {
                     const x = xOf(i);
                     const y = yOf(d.value);
                     if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
                 });
                 ctx.stroke();
 
-                // X-axis epoch labels (show ~5-8 evenly spaced)
-                const labelCount = Math.min(data.length, 7);
+                // Data points (small dots at each checkpoint)
+                ctx.fillStyle = color;
+                plotData.forEach((d, i) => {
+                    const x = xOf(i);
+                    const y = yOf(d.value);
+                    ctx.beginPath(); ctx.arc(x, y, 2.5, 0, Math.PI * 2); ctx.fill();
+                });
+
+                // X-axis checkpoint labels — thin out if too dense
+                const maxLabels = Math.max(3, Math.floor(plotW / 55));
+                const labelEvery = Math.max(1, Math.ceil(plotData.length / maxLabels));
+                ctx.fillStyle = '#666';
+                ctx.font = '10px sans-serif';
+                ctx.textAlign = 'center';
+                plotData.forEach((d, i) => {
+                    if (i % labelEvery === 0 || i === plotData.length - 1) {
+                        const x = xOf(i);
+                        const ue = userEpoch(d.epoch);
+                        ctx.fillText(ue, x, padTop + plotH + 14);
+                        // Tick mark
+                        ctx.strokeStyle = '#ccc';
+                        ctx.lineWidth = 1;
+                        ctx.beginPath(); ctx.moveTo(x, padTop + plotH); ctx.lineTo(x, padTop + plotH + 4); ctx.stroke();
+                    }
+                });
+
+                // X-axis title
                 ctx.fillStyle = '#999';
                 ctx.font = '9px sans-serif';
-                ctx.textAlign = 'center';
-                for (let i = 0; i < labelCount; i++) {
-                    const idx = Math.round(i * (data.length - 1) / (labelCount - 1));
-                    const ep = epochs[idx];
-                    if (ep != null) {
-                        const x = xOf(idx);
-                        ctx.fillText('ep ' + userEpoch(ep), x, padTop + plotH + 14);
-                    }
-                }
+                ctx.fillText('Checkpoint Epoch', padLeft + plotW / 2, padTop + plotH + 26);
             }
 
             let statsInterval = null;
